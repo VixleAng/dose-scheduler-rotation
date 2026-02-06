@@ -1,13 +1,19 @@
 "use client";
 
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 
-function NavButton({ href, label }: { href: string; label: string }) {
+function NavButton({
+  href,
+  label,
+}: {
+  href: string;
+  label: string;
+}) {
   const pathname = usePathname();
 
-  // Prevent hydration mismatch (wait until client has mounted)
+  // Prevent hydration mismatch (SSR-safe)
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -16,7 +22,8 @@ function NavButton({ href, label }: { href: string; label: string }) {
 
   const active = mounted && pathname === href;
 
-  if (active) return null; // hide current page
+  // Hide the button for the current page
+  if (active) return null;
 
   return (
     <Link
@@ -37,12 +44,19 @@ function NavButton({ href, label }: { href: string; label: string }) {
   );
 }
 
-export default function AppHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+export default function AppHeader({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
   return (
     <div
       style={{
         border: "1px solid rgba(17,17,17,0.08)",
-        background: "linear-gradient(180deg, rgba(250,250,250,1) 0%, rgba(255,255,255,1) 100%)",
+        background:
+          "linear-gradient(180deg, rgba(250,250,250,1) 0%, rgba(255,255,255,1) 100%)",
         borderRadius: 18,
         padding: 14,
       }}
@@ -57,8 +71,14 @@ export default function AppHeader({ title, subtitle }: { title: string; subtitle
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>{title}</h1>
-          {subtitle ? <div style={{ color: "#555", marginTop: 6 }}>{subtitle}</div> : null}
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>
+            {title}
+          </h1>
+          {subtitle ? (
+            <div style={{ color: "#555", marginTop: 6 }}>
+              {subtitle}
+            </div>
+          ) : null}
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
