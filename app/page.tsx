@@ -68,12 +68,12 @@ const STORAGE_KEYS = {
 
 const ROUTINE_COLORS = ["#2563eb", "#16a34a", "#ea580c", "#7c3aed", "#dc2626", "#0891b2", "#ca8a04"];
 
-/** Warm “health app” palette (same vibe as Rotation) */
+/** Warm “health app” palette */
 const UI = {
   bg: "#fbfaf8",
   card: "#ffffff",
   line: "rgba(17,17,17,0.10)",
-  muted: "#555",
+  muted: "#4b5563", // ✅ darker for mobile readability
   ink: "#111",
   accent: "#ff6a3d",
   accentSoft: "rgba(255,106,61,0.14)",
@@ -137,10 +137,9 @@ function parseHealthTimeToComparable(timeHHMM: string) {
 }
 
 /**
- * ✅ FIXED NAV BUTTON
- * - No window.location usage
- * - Prevents hydration mismatch by waiting until mounted
- * - Hides current page button (so no redundant nav)
+ * ✅ NAV BUTTON (mobile compact)
+ * - avoids hydration mismatch by waiting until mounted
+ * - hides current page button
  */
 function NavButton({ href, label }: { href: string; label: string }) {
   const pathname = usePathname();
@@ -149,25 +148,56 @@ function NavButton({ href, label }: { href: string; label: string }) {
   useEffect(() => setMounted(true), []);
 
   const active = mounted && pathname === href;
-
-  // Hide the current page nav button (cleaner & matches what you wanted)
   if (active) return null;
 
   return (
-    <Link
-      href={href}
+    <Link href={href} className="navBtn">
+      {label} <span className="arrow">→</span>
+    </Link>
+  );
+}
+
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div
       style={{
-        padding: "10px 12px",
-        borderRadius: 12,
         border: `1px solid ${UI.line}`,
+        borderRadius: 18,
+        padding: 14,
         background: UI.card,
-        color: UI.ink,
-        fontWeight: 900,
-        textDecoration: "none",
-        boxShadow: "0 8px 18px rgba(0,0,0,0.06)",
+        boxShadow: UI.shadow,
       }}
     >
-      {label} →
+      <div style={{ fontWeight: 900, marginBottom: 10, color: UI.ink }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function PrimaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="btnPrimary"
+      style={{
+        textDecoration: "none",
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SoftLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="btnSoft"
+      style={{
+        textDecoration: "none",
+      }}
+    >
+      {children}
     </Link>
   );
 }
@@ -310,7 +340,9 @@ export default function HomeDashboard() {
       title: "Health check-in",
       routineId: "health",
       routineName: "Health",
-      subtitle: `${h.timeHHMM}${h.weightKg ? ` • ${h.weightKg}kg` : ""}${h.bpSys && h.bpDia ? ` • ${h.bpSys}/${h.bpDia}` : ""}${h.exerciseType ? ` • ${h.exerciseType}` : ""}`,
+      subtitle: `${h.timeHHMM}${h.weightKg ? ` • ${h.weightKg}kg` : ""}${
+        h.bpSys && h.bpDia ? ` • ${h.bpSys}/${h.bpDia}` : ""
+      }${h.exerciseType ? ` • ${h.exerciseType}` : ""}`,
     }));
 
     const all = [...doses, ...injs, ...health].sort(
@@ -331,18 +363,7 @@ export default function HomeDashboard() {
 
   function Chip({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
     return (
-      <button
-        onClick={onClick}
-        style={{
-          padding: "10px 12px",
-          borderRadius: 999,
-          border: active ? `1px solid ${UI.ink}` : `1px solid ${UI.line}`,
-          background: active ? UI.ink : "#fff",
-          color: active ? "#fff" : UI.ink,
-          fontWeight: 900,
-          cursor: "pointer",
-        }}
-      >
+      <button onClick={onClick} className={`chip ${active ? "chipActive" : ""}`}>
         {children}
       </button>
     );
@@ -350,19 +371,7 @@ export default function HomeDashboard() {
 
   function SmallChip({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
     return (
-      <button
-        onClick={onClick}
-        style={{
-          padding: "8px 10px",
-          borderRadius: 999,
-          border: active ? `1px solid ${UI.ink}` : `1px solid ${UI.line}`,
-          background: active ? UI.accentSoft : "#fff",
-          color: UI.ink,
-          fontWeight: 900,
-          cursor: "pointer",
-          fontSize: 12,
-        }}
-      >
+      <button onClick={onClick} className={`chip chipSmall ${active ? "chipSmallActive" : ""}`}>
         {children}
       </button>
     );
@@ -392,54 +401,18 @@ export default function HomeDashboard() {
     const firstHealth = health[0];
 
     return (
-      <button
-        onClick={() => setSelectedDayYMD(ymd)}
-        style={{
-          borderRadius: 16,
-          border: isToday ? `2px solid ${UI.ink}` : `1px solid ${UI.line}`,
-          background: "#fff",
-          cursor: "pointer",
-          textAlign: "left",
-          padding: 10,
-          minHeight: 122,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          overflow: "hidden",
-          boxShadow: "0 10px 24px rgba(0,0,0,0.05)",
-        }}
-        title="Tap to view day"
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div style={{ fontWeight: 900 }}>{dayNumLabel}</div>
-          {total > 0 && <div style={{ fontSize: 12, color: UI.muted, fontWeight: 900 }}>{total}</div>}
+      <button onClick={() => setSelectedDayYMD(ymd)} className={`dayCard ${isToday ? "dayCardToday" : ""}`} title="Tap to view day">
+        <div className="dayCardTop">
+          <div style={{ fontWeight: 900, color: UI.ink }}>{dayNumLabel}</div>
+          {total > 0 && <div className="dayCardCount">{total}</div>}
         </div>
 
         {showH && health.length > 0 && (
-          <div
-            style={{
-              fontSize: 12,
-              border: `1px solid ${UI.line}`,
-              borderRadius: 12,
-              padding: "6px 8px",
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              background: "#fff7f3",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-            title="Health entry"
-          >
-            <span style={{ fontWeight: 900 }}>Health</span>
-            <span style={{ color: UI.muted }}>{firstHealth?.timeHHMM}</span>
-            <span style={{ color: UI.muted }}>
-              {firstHealth?.weightKg
-                ? `⚖️ ${firstHealth.weightKg}kg`
-                : firstHealth?.exerciseType
-                ? `🏃 ${firstHealth.exerciseType}`
-                : "✅ Logged"}
+          <div className="miniRow miniRowHealth" title="Health entry">
+            <span style={{ fontWeight: 900, color: UI.ink }}>Health</span>
+            <span className="miniMuted">{firstHealth?.timeHHMM}</span>
+            <span className="miniMuted">
+              {firstHealth?.weightKg ? `⚖️ ${firstHealth.weightKg}kg` : firstHealth?.exerciseType ? `🏃 ${firstHealth.exerciseType}` : "✅ Logged"}
             </span>
           </div>
         )}
@@ -448,27 +421,11 @@ export default function HomeDashboard() {
           doses.slice(0, 2).map((x) => {
             const color = routineColorById[x.routineId] ?? UI.ink;
             return (
-              <div
-                key={x.id}
-                style={{
-                  fontSize: 12,
-                  border: `1px solid ${UI.line}`,
-                  borderRadius: 12,
-                  padding: "6px 8px",
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  background: "#fafafa",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-                title={`${x.routineName} • ${x.amountMg}mg`}
-              >
+              <div key={x.id} className="miniRow" title={`${x.routineName} • ${x.amountMg}mg`}>
                 <span style={{ width: 8, height: 8, borderRadius: 999, background: color }} />
-                <span style={{ fontWeight: 900 }}>Dose</span>
-                <span style={{ color: UI.muted }}>{x.routineName}</span>
-                <span>• {x.amountMg}mg</span>
+                <span style={{ fontWeight: 900, color: UI.ink }}>Dose</span>
+                <span className="miniMuted">{x.routineName}</span>
+                <span style={{ color: UI.ink }}>• {x.amountMg}mg</span>
               </div>
             );
           })}
@@ -477,61 +434,31 @@ export default function HomeDashboard() {
           injs.slice(0, 1).map((x) => {
             const color = routineColorById[x.routineId] ?? UI.ink;
             return (
-              <div
-                key={x.id}
-                style={{
-                  fontSize: 12,
-                  border: `1px solid ${UI.line}`,
-                  borderRadius: 12,
-                  padding: "6px 8px",
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  background: "#fff",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-                title={`${x.routineName} • ${x.zoneLabel}`}
-              >
+              <div key={x.id} className="miniRow" title={`${x.routineName} • ${x.zoneLabel}`}>
                 <span style={{ width: 8, height: 8, borderRadius: 999, background: color }} />
-                <span style={{ fontWeight: 900 }}>Inj</span>
-                <span style={{ color: UI.muted }}>{x.routineName}</span>
-                <span>• {x.zoneLabel}</span>
+                <span style={{ fontWeight: 900, color: UI.ink }}>Inj</span>
+                <span className="miniMuted">{x.routineName}</span>
+                <span style={{ color: UI.ink }}>• {x.zoneLabel}</span>
               </div>
             );
           })}
 
-        {total > 3 && <div style={{ fontSize: 12, color: UI.muted }}>+ more</div>}
+        {total > 3 && <div className="miniMuted" style={{ fontSize: 12 }}>+ more</div>}
       </button>
     );
   }
 
   function TodayHealthCard() {
     const show = todayHealth || latestHealth;
+
     if (!show) {
       return (
-        <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff", boxShadow: UI.shadow }}>
-          <div style={{ fontWeight: 900 }}>Today Health</div>
-          <div style={{ marginTop: 8, color: UI.muted }}>No health entry yet. Add a quick check-in.</div>
-          <div style={{ marginTop: 10 }}>
-            <Link
-              href="/health"
-              style={{
-                display: "inline-block",
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: `1px solid ${UI.accent}`,
-                background: UI.accent,
-                color: "#fff",
-                fontWeight: 900,
-                textDecoration: "none",
-              }}
-            >
-              Go to Health Board →
-            </Link>
+        <SectionCard title="Today Health">
+          <div style={{ marginTop: 4, color: UI.muted }}>No health entry yet. Add a quick check-in.</div>
+          <div style={{ marginTop: 12 }}>
+            <PrimaryLink href="/health">Go to Health Board →</PrimaryLink>
           </div>
-        </div>
+        </SectionCard>
       );
     }
 
@@ -539,26 +466,13 @@ export default function HomeDashboard() {
     const label = todayHealth ? "Today Health" : "Latest Health";
 
     return (
-      <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff7f3", boxShadow: UI.shadow }}>
+      <div style={{ border: `1px solid ${UI.line}`, borderRadius: 18, padding: 14, background: "#fff7f3", boxShadow: UI.shadow }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ fontWeight: 900 }}>{label}</div>
-          <Link
-            href="/health"
-            style={{
-              padding: "8px 10px",
-              borderRadius: 12,
-              border: `1px solid ${UI.line}`,
-              background: "#fff",
-              color: UI.ink,
-              fontWeight: 900,
-              textDecoration: "none",
-            }}
-          >
-            Open →
-          </Link>
+          <div style={{ fontWeight: 900, color: UI.ink }}>{label}</div>
+          <SoftLink href="/health">Open →</SoftLink>
         </div>
 
-        <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ marginTop: 10, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", color: UI.ink }}>
           <div style={{ fontWeight: 900 }}>
             {h.ymd} • {h.timeHHMM}
           </div>
@@ -591,15 +505,256 @@ export default function HomeDashboard() {
 
   return (
     <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto", background: UI.bg, minHeight: "100vh" }}>
+      <style jsx global>{`
+        /* ---- Mobile polish ---- */
+        :root {
+          --dayMinH: 122px;
+        }
+
+        @media (max-width: 860px) {
+          :root {
+            --dayMinH: 104px;
+          }
+        }
+
+        @media (max-width: 520px) {
+          :root {
+            --dayMinH: 86px;
+          }
+        }
+
+        .navWrap {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .navBtn {
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid ${UI.line};
+          background: ${UI.card};
+          color: ${UI.ink};
+          font-weight: 900;
+          text-decoration: none;
+          box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
+          display: inline-flex;
+          gap: 8px;
+          align-items: center;
+          white-space: nowrap;
+        }
+
+        .btnPrimary {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid ${UI.accent};
+          background: ${UI.accent};
+          color: #fff;
+          font-weight: 900;
+        }
+
+        .btnSoft {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 9px 10px;
+          border-radius: 12px;
+          border: 1px solid ${UI.line};
+          background: #fff;
+          color: ${UI.ink};
+          font-weight: 900;
+        }
+
+        .chip {
+          padding: 10px 12px;
+          border-radius: 999px;
+          border: 1px solid ${UI.line};
+          background: #fff;
+          color: ${UI.ink};
+          font-weight: 900;
+          cursor: pointer;
+        }
+        .chipActive {
+          border-color: ${UI.ink};
+          background: ${UI.ink};
+          color: #fff;
+        }
+
+        .chipSmall {
+          padding: 8px 10px;
+          font-size: 12px;
+          background: #fff;
+        }
+        .chipSmallActive {
+          background: ${UI.accentSoft};
+          border-color: ${UI.ink};
+          color: ${UI.ink};
+        }
+
+        .topGrid {
+          margin-top: 14px;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+
+        /* ✅ mobile: top cards stack */
+        @media (max-width: 820px) {
+          .topGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        /* ✅ mobile: nav becomes 2-column compact buttons */
+        @media (max-width: 520px) {
+          h1 {
+            font-size: 24px !important;
+          }
+          .navWrap {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            width: 100%;
+          }
+          .navBtn {
+            justify-content: center;
+            padding: 10px 10px;
+            border-radius: 14px;
+          }
+          .arrow {
+            display: none;
+          }
+        }
+
+        .quickGrid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          margin-top: 10px;
+        }
+        @media (max-width: 520px) {
+          .quickGrid {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        .dayCard {
+          border-radius: 16px;
+          border: 1px solid ${UI.line};
+          background: #fff;
+          cursor: pointer;
+          text-align: left;
+          padding: 10px;
+          min-height: var(--dayMinH);
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          overflow: hidden;
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.05);
+        }
+        .dayCardToday {
+          border: 2px solid ${UI.ink};
+        }
+        .dayCardTop {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+        }
+        .dayCardCount {
+          font-size: 12px;
+          color: ${UI.muted};
+          font-weight: 900;
+        }
+
+        .miniRow {
+          font-size: 12px;
+          border: 1px solid ${UI.line};
+          border-radius: 12px;
+          padding: 6px 8px;
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          background: #fafafa;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .miniRowHealth {
+          background: #fff7f3;
+        }
+        .miniMuted {
+          color: ${UI.muted};
+          font-weight: 800;
+        }
+
+        .controlBar {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        @media (max-width: 520px) {
+          .controlBar {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .controlRow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+          .jumpBtn {
+            width: 100%;
+          }
+        }
+
+        .calNav {
+          display: flex;
+          gap: 10px;
+        }
+        @media (max-width: 520px) {
+          .calNav {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+          }
+          .calNav button {
+            padding: 10px 8px !important;
+            border-radius: 14px !important;
+          }
+        }
+
+        /* prevent horizontal scroll */
+        body {
+          overflow-x: hidden;
+        }
+      `}</style>
+
       {/* Shared header/nav */}
-      <div style={{ border: `1px solid ${UI.line}`, borderRadius: 18, padding: 14, background: "linear-gradient(180deg, #fff 0%, #fff7f3 100%)" }}>
+      <div
+        style={{
+          border: `1px solid ${UI.line}`,
+          borderRadius: 18,
+          padding: 14,
+          background: "linear-gradient(180deg, #fff 0%, #fff7f3 100%)",
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Dashboard</h1>
-            <div style={{ color: UI.muted, marginTop: 6 }}>Doses, injections, and health check-ins — one overview.</div>
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900, color: UI.ink }}>Dashboard</h1>
+            <div style={{ color: UI.muted, marginTop: 6, fontWeight: 600 }}>
+              Doses, injections, and health check-ins — one overview.
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div className="navWrap">
             <NavButton href="/" label="Dashboard" />
             <NavButton href="/scheduler" label="Scheduler" />
             <NavButton href="/rotation" label="Rotation" />
@@ -609,33 +764,26 @@ export default function HomeDashboard() {
       </div>
 
       {/* Top cards */}
-      <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      <section className="topGrid">
         <TodayHealthCard />
 
-        <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff", boxShadow: UI.shadow }}>
-          <div style={{ fontWeight: 900 }}>Quick actions</div>
-          <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Link href="/scheduler" style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", color: UI.ink, fontWeight: 900, textDecoration: "none" }}>
-              + Log dose
-            </Link>
-            <Link href="/rotation" style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", color: UI.ink, fontWeight: 900, textDecoration: "none" }}>
-              + Log injection
-            </Link>
-            <Link href="/health" style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", color: UI.ink, fontWeight: 900, textDecoration: "none" }}>
-              + Health check-in
-            </Link>
+        <SectionCard title="Quick actions">
+          <div className="quickGrid">
+            <SoftLink href="/scheduler">+ Log dose</SoftLink>
+            <SoftLink href="/rotation">+ Log injection</SoftLink>
+            <SoftLink href="/health">+ Health check-in</SoftLink>
           </div>
 
-          <div style={{ marginTop: 10, color: UI.muted, fontSize: 12 }}>
+          <div style={{ marginTop: 10, color: UI.muted, fontSize: 12, fontWeight: 700 }}>
             Tip: Use <b>Today</b> view for a timeline, and <b>Week</b> for planning.
           </div>
-        </div>
+        </SectionCard>
       </section>
 
       {/* Controls */}
       <section style={{ marginTop: 14, border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff", boxShadow: UI.shadow }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div className="controlBar">
+          <div className="controlRow">
             <Chip active={view === "today"} onClick={() => setView("today")}>
               Today
             </Chip>
@@ -647,7 +795,7 @@ export default function HomeDashboard() {
             </Chip>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="controlRow">
             <SmallChip active={filter === "all"} onClick={() => setFilter("all")}>
               All
             </SmallChip>
@@ -662,6 +810,7 @@ export default function HomeDashboard() {
             </SmallChip>
 
             <button
+              className="jumpBtn"
               onClick={() => {
                 setCalendarMonth(new Date());
                 setWeekAnchor(new Date());
@@ -674,6 +823,7 @@ export default function HomeDashboard() {
                 cursor: "pointer",
                 fontWeight: 900,
                 fontSize: 12,
+                color: UI.ink,
               }}
             >
               Jump to today
@@ -685,16 +835,17 @@ export default function HomeDashboard() {
         {view === "today" && (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ fontWeight: 900, fontSize: 16 }}>Today ({todayYMD})</div>
+              <div style={{ fontWeight: 900, fontSize: 16, color: UI.ink }}>Today ({todayYMD})</div>
               <button
                 onClick={() => setSelectedDayYMD(todayYMD)}
                 style={{
                   padding: "10px 12px",
-                  borderRadius: 12,
+                  borderRadius: 14,
                   border: `1px solid ${UI.line}`,
                   background: "#fff",
                   cursor: "pointer",
                   fontWeight: 900,
+                  color: UI.ink,
                 }}
               >
                 Open day details →
@@ -703,7 +854,7 @@ export default function HomeDashboard() {
 
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
               {todayTimeline.length === 0 ? (
-                <div style={{ color: UI.muted }}>Nothing logged for today yet.</div>
+                <div style={{ color: UI.muted, fontWeight: 700 }}>Nothing logged for today yet.</div>
               ) : (
                 todayTimeline.map((item, idx) => {
                   const kindLabel = item.kind === "dose" ? "Dose" : item.kind === "inj" ? "Inj" : "Health";
@@ -727,10 +878,10 @@ export default function HomeDashboard() {
                     >
                       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                         <span style={{ width: 10, height: 10, borderRadius: 999, background: dotColor }} />
-                        <span style={{ fontWeight: 900 }}>{kindLabel}</span>
+                        <span style={{ fontWeight: 900, color: UI.ink }}>{kindLabel}</span>
                         <span style={{ color: UI.muted, fontWeight: 900 }}>{item.routineName}</span>
-                        <span style={{ fontWeight: 900 }}>{item.title}</span>
-                        <span style={{ color: UI.muted, fontSize: 12 }}>{item.subtitle}</span>
+                        <span style={{ fontWeight: 900, color: UI.ink }}>{item.title}</span>
+                        <span style={{ color: UI.muted, fontSize: 12, fontWeight: 700 }}>{item.subtitle}</span>
                       </div>
 
                       <button
@@ -742,6 +893,7 @@ export default function HomeDashboard() {
                           background: "#fff",
                           cursor: "pointer",
                           fontWeight: 900,
+                          color: UI.ink,
                         }}
                       >
                         View day
@@ -758,16 +910,25 @@ export default function HomeDashboard() {
         {view === "week" && (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ fontWeight: 900, fontSize: 16 }}>Week of {toYMD(startOfWeek(weekAnchor))}</div>
+              <div style={{ fontWeight: 900, fontSize: 16, color: UI.ink }}>Week of {toYMD(startOfWeek(weekAnchor))}</div>
 
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setWeekAnchor(addDays(weekAnchor, -7))} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900 }}>
+              <div className="calNav">
+                <button
+                  onClick={() => setWeekAnchor(addDays(weekAnchor, -7))}
+                  style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
+                >
                   ← Prev
                 </button>
-                <button onClick={() => setWeekAnchor(new Date())} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900 }}>
+                <button
+                  onClick={() => setWeekAnchor(new Date())}
+                  style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
+                >
                   This week
                 </button>
-                <button onClick={() => setWeekAnchor(addDays(weekAnchor, 7))} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900 }}>
+                <button
+                  onClick={() => setWeekAnchor(addDays(weekAnchor, 7))}
+                  style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
+                >
                   Next →
                 </button>
               </div>
@@ -793,16 +954,25 @@ export default function HomeDashboard() {
         {view === "month" && (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ fontWeight: 900, fontSize: 16 }}>{monthLabel(calendarMonth)}</div>
+              <div style={{ fontWeight: 900, fontSize: 16, color: UI.ink }}>{monthLabel(calendarMonth)}</div>
 
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900 }}>
+              <div className="calNav">
+                <button
+                  onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                  style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
+                >
                   ← Prev
                 </button>
-                <button onClick={() => setCalendarMonth(new Date())} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900 }}>
+                <button
+                  onClick={() => setCalendarMonth(new Date())}
+                  style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
+                >
                   This month
                 </button>
-                <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900 }}>
+                <button
+                  onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                  style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
+                >
                   Next →
                 </button>
               </div>
@@ -819,7 +989,7 @@ export default function HomeDashboard() {
             <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
               {monthGrid.map((c, idx) => {
                 if (!c.ymd) {
-                  return <div key={idx} style={{ height: 122, borderRadius: 16, border: `1px solid ${UI.line}`, background: "#fafafa" }} />;
+                  return <div key={idx} style={{ minHeight: "var(--dayMinH)", borderRadius: 16, border: `1px solid ${UI.line}`, background: "#fafafa" }} />;
                 }
                 return <DayCardMini key={c.ymd} ymd={c.ymd} dayNumLabel={`${c.dayNum}`} />;
               })}
@@ -861,39 +1031,33 @@ export default function HomeDashboard() {
 
             <div style={{ padding: 14, borderBottom: `1px solid ${UI.line}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 900 }}>Day details</div>
-                <div style={{ color: UI.muted, fontSize: 13 }}>{selectedDayYMD}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: UI.ink }}>Day details</div>
+                <div style={{ color: UI.muted, fontSize: 13, fontWeight: 700 }}>{selectedDayYMD}</div>
               </div>
 
-              <button onClick={() => setSelectedDayYMD(null)} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900 }}>
+              <button onClick={() => setSelectedDayYMD(null)} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}>
                 Close
               </button>
             </div>
 
             <div style={{ padding: 14, overflowY: "auto" }}>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <Link href="/scheduler" style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.ink}`, background: UI.ink, color: "#fff", fontWeight: 900, textDecoration: "none" }}>
-                  Add / edit doses →
-                </Link>
-                <Link href="/rotation" style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", color: UI.ink, fontWeight: 900, textDecoration: "none" }}>
-                  Add / edit injections →
-                </Link>
-                <Link href="/health" style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${UI.line}`, background: "#fff", color: UI.ink, fontWeight: 900, textDecoration: "none" }}>
-                  Add / edit health →
-                </Link>
+                <PrimaryLink href="/scheduler">Add / edit doses →</PrimaryLink>
+                <SoftLink href="/rotation">Add / edit injections →</SoftLink>
+                <SoftLink href="/health">Add / edit health →</SoftLink>
               </div>
 
               {(filter === "all" || filter === "health") && (
                 <>
-                  <div style={{ marginTop: 14, fontWeight: 900, fontSize: 16 }}>Health</div>
+                  <div style={{ marginTop: 14, fontWeight: 900, fontSize: 16, color: UI.ink }}>Health</div>
                   {selectedHealth.length === 0 ? (
-                    <div style={{ color: UI.muted, marginTop: 6 }}>No health entries for this day.</div>
+                    <div style={{ color: UI.muted, marginTop: 6, fontWeight: 700 }}>No health entries for this day.</div>
                   ) : (
                     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
                       {selectedHealth.map((h) => (
                         <div key={h.id} style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff7f3" }}>
-                          <div style={{ fontWeight: 900 }}>{h.timeHHMM}</div>
-                          <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 900, color: UI.ink }}>{h.timeHHMM}</div>
+                          <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", color: UI.ink }}>
                             {h.weightKg ? (
                               <div>
                                 ⚖️ <b>{h.weightKg}kg</b>
@@ -927,9 +1091,9 @@ export default function HomeDashboard() {
 
               {(filter === "all" || filter === "doses") && (
                 <>
-                  <div style={{ marginTop: 16, fontWeight: 900, fontSize: 16 }}>Doses</div>
+                  <div style={{ marginTop: 16, fontWeight: 900, fontSize: 16, color: UI.ink }}>Doses</div>
                   {selectedDoses.length === 0 ? (
-                    <div style={{ color: UI.muted, marginTop: 6 }}>No doses for this day.</div>
+                    <div style={{ color: UI.muted, marginTop: 6, fontWeight: 700 }}>No doses for this day.</div>
                   ) : (
                     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
                       {selectedDoses.map((x) => {
@@ -938,11 +1102,11 @@ export default function HomeDashboard() {
                           <div key={x.id} style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fafafa" }}>
                             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                               <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
-                              <div style={{ fontWeight: 900 }}>
+                              <div style={{ fontWeight: 900, color: UI.ink }}>
                                 {x.routineName} • {x.amountMg}mg
                               </div>
                             </div>
-                            <div style={{ color: UI.muted, fontSize: 12, marginTop: 4 }}>
+                            <div style={{ color: UI.muted, fontSize: 12, marginTop: 4, fontWeight: 700 }}>
                               {timeLabel(x.doseDateTime)} • {x.frequency}
                             </div>
                           </div>
@@ -955,9 +1119,9 @@ export default function HomeDashboard() {
 
               {(filter === "all" || filter === "injections") && (
                 <>
-                  <div style={{ marginTop: 16, fontWeight: 900, fontSize: 16 }}>Injections</div>
+                  <div style={{ marginTop: 16, fontWeight: 900, fontSize: 16, color: UI.ink }}>Injections</div>
                   {selectedInj.length === 0 ? (
-                    <div style={{ color: UI.muted, marginTop: 6 }}>No injections for this day.</div>
+                    <div style={{ color: UI.muted, marginTop: 6, fontWeight: 700 }}>No injections for this day.</div>
                   ) : (
                     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
                       {selectedInj.map((x) => {
@@ -966,12 +1130,12 @@ export default function HomeDashboard() {
                           <div key={x.id} style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
                             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                               <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
-                              <div style={{ fontWeight: 900 }}>
+                              <div style={{ fontWeight: 900, color: UI.ink }}>
                                 {x.routineName} • {x.zoneLabel}
                                 {x.doseMg ? <span style={{ color: UI.muted, fontWeight: 800 }}> • {x.doseMg}mg</span> : null}
                               </div>
                             </div>
-                            <div style={{ color: UI.muted, fontSize: 12, marginTop: 4 }}>
+                            <div style={{ color: UI.muted, fontSize: 12, marginTop: 4, fontWeight: 700 }}>
                               {timeLabel(x.injectedAtISO)} • {x.view}
                             </div>
                             {x.notes ? <div style={{ marginTop: 8, color: "#444", fontSize: 12 }}>{x.notes}</div> : null}
