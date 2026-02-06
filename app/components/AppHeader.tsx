@@ -2,26 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
-function NavButton({
-  href,
-  label,
-}: {
-  href: string;
-  label: string;
-}) {
+function NavButton({ href, label }: { href: string; label: string }) {
   const pathname = usePathname();
 
-  // Prevent hydration mismatch
-  const [mounted, setMounted] = React.useState(false);
+  // Prevent hydration mismatch (don't decide "active" until we're mounted on client)
+  const [mounted, setMounted] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setMounted(true);
   }, []);
 
   const active = mounted && pathname === href;
 
-  if (active) return null; // hide current page
+  if (active) return null; // hide current page button
 
   return (
     <Link
@@ -70,9 +65,7 @@ export default function AppHeader({
       >
         <div>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>{title}</h1>
-          {subtitle ? (
-            <div style={{ color: "#555", marginTop: 6 }}>{subtitle}</div>
-          ) : null}
+          {subtitle ? <div style={{ color: "#555", marginTop: 6 }}>{subtitle}</div> : null}
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
