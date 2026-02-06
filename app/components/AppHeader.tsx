@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 function NavButton({ href, label }: { href: string; label: string }) {
   const pathname = usePathname();
 
-  // Prevent hydration mismatch (don't decide "active" until we're mounted on client)
+  // Prevent hydration mismatch (wait until client has mounted)
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -16,7 +16,7 @@ function NavButton({ href, label }: { href: string; label: string }) {
 
   const active = mounted && pathname === href;
 
-  if (active) return null; // hide current page button
+  if (active) return null; // hide current page
 
   return (
     <Link
@@ -37,19 +37,12 @@ function NavButton({ href, label }: { href: string; label: string }) {
   );
 }
 
-export default function AppHeader({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle?: string;
-}) {
+export default function AppHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div
       style={{
         border: "1px solid rgba(17,17,17,0.08)",
-        background:
-          "linear-gradient(180deg, rgba(250,250,250,1) 0%, rgba(255,255,255,1) 100%)",
+        background: "linear-gradient(180deg, rgba(250,250,250,1) 0%, rgba(255,255,255,1) 100%)",
         borderRadius: 18,
         padding: 14,
       }}
