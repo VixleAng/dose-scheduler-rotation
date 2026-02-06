@@ -87,7 +87,15 @@ function daysAgoFromISO(iso?: string) {
 
 /* ---------------- UI ---------------- */
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  children,
+  right,
+}: {
+  title: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div
       style={{
@@ -98,7 +106,10 @@ function SectionCard({ title, children }: { title: string; children: React.React
         boxShadow: UI.shadow,
       }}
     >
-      <div style={{ fontWeight: 900, marginBottom: 10 }}>{title}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+        <div style={{ fontWeight: 900, marginBottom: 10, color: UI.ink }}>{title}</div>
+        {right}
+      </div>
       {children}
     </div>
   );
@@ -112,11 +123,12 @@ function Pill({ active, children, onClick }: { active: boolean; children: React.
       style={{
         padding: "10px 14px",
         borderRadius: 999,
-        border: active ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
-        background: active ? UI.accentSoft : UI.card,
+        border: active ? `2px solid ${UI.accent}` : `1px solid rgba(17,17,17,0.18)`,
+        background: active ? UI.accentSoft : "#fff",
         cursor: "pointer",
         fontWeight: 900,
         color: UI.ink,
+        boxShadow: active ? "0 10px 26px rgba(0,0,0,0.06)" : "none",
       }}
     >
       {children}
@@ -158,7 +170,7 @@ export default function RotationPage() {
   const [selectedRoutineId, setSelectedRoutineId] = useState<string>(DEFAULT_ROUTINES[0].id);
   const [logs, setLogs] = useState<InjectionLog[]>([]);
 
-  // ✅ sheet state (this is what prevents "sheetOpen is not defined")
+  // ✅ sheet state
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedSpotId, setSelectedSpotId] = useState<string | null>(null);
 
@@ -194,6 +206,7 @@ export default function RotationPage() {
   const spotsForView = useMemo(() => SPOTS.filter((s) => s.view === view), [view]);
 
   const lastUsedBySpot = useMemo(() => {
+    // logs are stored newest-first; first time we see spotId is latest use
     const m: Record<string, string> = {};
     for (const l of logs) {
       if (!m[l.spotId]) m[l.spotId] = l.injectedAtISO;
@@ -274,453 +287,505 @@ export default function RotationPage() {
         <style jsx global>{`
           @keyframes softPulse {
             0% { transform: translateZ(0) scale(1); }
-            50% { transform: translateZ(0) scale(1.05); }
+            50% { transform: translateZ(0) scale(1.03); }
             100% { transform: translateZ(0) scale(1); }
           }
           .pillHover { transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease; }
           .pillHover:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(0,0,0,0.08); }
-          .pulseActive { animation: softPulse 1.6s ease-in-out infinite; }
+          .pulseActive { animation: softPulse 1.7s ease-in-out infinite; }
+
+          /* Mobile-first container + spacing */
+          .rtWrap { width: 100%; max-width: 540px; margin: 0 auto; padding: 12px 14px 96px; }
+          @media (min-width: 880px) {
+            .rtWrap { max-width: 980px; padding: 16px 18px 80px; }
+          }
+
+          /* Layout becomes 2-col only on larger screens */
+          .rtGrid { margin-top: 16px; display: grid; grid-template-columns: 1fr; gap: 14px; }
+          @media (min-width: 880px) {
+            .rtGrid { grid-template-columns: 1.1fr 0.9fr; }
+          }
+
+          /* Better tap targets on mobile */
+          .rtBtn { min-height: 48px; }
+
+          /* Spots: 1 column on small screens, 2 columns from ~420px */
+          .spotGrid { margin-top: 10px; display: grid; grid-template-columns: 1fr; gap: 10px; }
+          @media (min-width: 420px) {
+            .spotGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          }
+
+          /* Inputs: clearer contrast + focus ring */
           .inputPremium { outline: none; transition: box-shadow 160ms ease, border-color 160ms ease; }
           .inputPremium:focus { border-color: rgba(255, 106, 61, 0.65) !important; box-shadow: 0 0 0 4px rgba(255, 106, 61, 0.12); }
+
+          /* Make date/time pickers more readable on mobile */
+          input[type="date"], input[type="time"] { -webkit-text-fill-color: #111; }
         `}</style>
 
-        {/* Front / Back */}
-        <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Pill active={view === "front"} onClick={() => setView("front")}>Front</Pill>
-          <Pill active={view === "back"} onClick={() => setView("back")}>Back</Pill>
-        </div>
-
-        {/* Routine selector */}
-        <section style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 900, marginBottom: 8 }}>Default routine</div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {routines.map((r) => {
-              const active = r.id === selectedRoutineId;
-              const color = routineColorById[r.id] ?? UI.ink;
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => setSelectedRoutineId(r.id)}
-                  className="pillHover"
-                  style={{
-                    padding: "12px 12px",
-                    borderRadius: 16,
-                    border: active ? `2px solid ${UI.ink}` : `1px solid ${UI.line}`,
-                    background: active ? UI.ink : UI.card,
-                    color: active ? "#fff" : UI.ink,
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    boxShadow: active ? UI.shadow : "none",
-                  }}
-                >
-                  <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
-                  {r.name}
-                </button>
-              );
-            })}
+        <div className="rtWrap">
+          {/* Front / Back */}
+          <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Pill active={view === "front"} onClick={() => setView("front")}>
+              Front
+            </Pill>
+            <Pill active={view === "back"} onClick={() => setView("back")}>
+              Back
+            </Pill>
           </div>
-        </section>
 
-        {/* Recommendation */}
-        <section
-          style={{
-            marginTop: 14,
-            border: `1px solid ${UI.line}`,
-            borderRadius: 18,
-            padding: 14,
-            background: "linear-gradient(180deg, #fff 0%, #fff7f3 100%)",
-            boxShadow: UI.shadow,
-          }}
-        >
-          <div style={{ fontWeight: 900 }}>Next recommended spot</div>
-          {recommended ? (
-            <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ fontSize: 16, fontWeight: 900 }}>
-                {recommended.s.label}
-                <span style={{ color: UI.muted, fontWeight: 800, marginLeft: 8, fontSize: 13 }}>
-                  (last used {recommended.days >= 9999 ? "never" : `${recommended.days}d ago`})
-                </span>
-              </div>
-
-              <button
-                onClick={() => openSheet(recommended.s)}
-                className="pillHover"
-                style={{
-                  padding: "12px 14px",
-                  borderRadius: 999,
-                  border: `1px solid ${UI.accent}`,
-                  background: UI.accent,
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontWeight: 900,
-                  boxShadow: UI.shadow,
-                }}
-              >
-                Log here →
-              </button>
-            </div>
-          ) : (
-            <div style={{ marginTop: 8, color: UI.muted }}>Pick a spot to start your rotation history.</div>
-          )}
-        </section>
-
-        {/* Main layout */}
-        <section style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 14 }}>
-          {/* Spot buttons */}
-          <SectionCard title="Choose a jab spot">
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {grouped.order.map((g) => {
-                const spots = grouped.map[g] ?? [];
+          {/* Routine selector */}
+          <section style={{ marginTop: 14 }}>
+            <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Default routine</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {routines.map((r) => {
+                const active = r.id === selectedRoutineId;
+                const color = routineColorById[r.id] ?? UI.ink;
                 return (
-                  <div key={g}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-                      <div style={{ fontWeight: 900 }}>
-                        {groupEmoji(g)} {groupLabel(g)}
-                      </div>
-                      <div style={{ color: UI.muted, fontSize: 12, fontWeight: 800 }}>{view.toUpperCase()}</div>
-                    </div>
-
-                    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-                      {spots.map((s) => {
-                        const last = lastUsedBySpot[s.id];
-                        const days = daysAgoFromISO(last);
-                        const never = days >= 9999;
-
-                        return (
-                          <button
-                            key={s.id}
-                            onClick={() => openSheet(s)}
-                            className="pillHover"
-                            style={{
-                              textAlign: "left",
-                              padding: 14,
-                              borderRadius: 18,
-                              border: `1px solid ${UI.line}`,
-                              background: "#fff",
-                              cursor: "pointer",
-                              boxShadow: "0 10px 26px rgba(0,0,0,0.05)",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 6,
-                            }}
-                          >
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                              <div style={{ fontWeight: 900 }}>{s.label}</div>
-                              <div
-                                style={{
-                                  padding: "6px 10px",
-                                  borderRadius: 999,
-                                  border: `1px solid ${UI.line}`,
-                                  background: never ? "rgba(17,17,17,0.02)" : UI.accentSoft,
-                                  fontSize: 12,
-                                  fontWeight: 900,
-                                  color: UI.ink,
-                                }}
-                              >
-                                {never ? "Never" : `${days}d`}
-                              </div>
-                            </div>
-
-                            <div style={{ color: UI.muted, fontSize: 12, fontWeight: 800 }}>Tap to log → opens sheet</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedRoutineId(r.id)}
+                    className="pillHover rtBtn"
+                    style={{
+                      padding: "12px 12px",
+                      borderRadius: 16,
+                      border: active ? `2px solid rgba(17,17,17,0.90)` : `1px solid rgba(17,17,17,0.18)`,
+                      background: active ? "rgba(17,17,17,0.92)" : "#fff",
+                      color: active ? "#fff" : UI.ink,
+                      cursor: "pointer",
+                      fontWeight: 900,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      boxShadow: active ? UI.shadow : "0 6px 18px rgba(0,0,0,0.05)",
+                    }}
+                  >
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
+                    {r.name}
+                  </button>
                 );
               })}
             </div>
-          </SectionCard>
+          </section>
 
-          {/* Recent */}
-          <SectionCard title="Recent injections">
-            {recent.length === 0 ? (
-              <div style={{ color: UI.muted }}>No injections logged yet.</div>
+          {/* Recommendation */}
+          <section
+            style={{
+              marginTop: 14,
+              border: `1px solid rgba(17,17,17,0.16)`,
+              borderRadius: 18,
+              padding: 14,
+              background: "linear-gradient(180deg, #ffffff 0%, #fff7f3 100%)",
+              boxShadow: UI.shadow,
+            }}
+          >
+            <div style={{ fontWeight: 900, color: UI.ink }}>Next recommended spot</div>
+            {recommended ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ fontSize: 16, fontWeight: 900, color: UI.ink }}>
+                  {recommended.s.label}
+                  <span style={{ color: "rgba(17,17,17,0.55)", fontWeight: 800, marginLeft: 8, fontSize: 13 }}>
+                    (last used {recommended.days >= 9999 ? "never" : `${recommended.days}d ago`})
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => openSheet(recommended.s)}
+                  className="pillHover rtBtn"
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: 999,
+                    border: `1px solid ${UI.accent}`,
+                    background: UI.accent,
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 900,
+                    boxShadow: UI.shadow,
+                    minWidth: 150,
+                  }}
+                >
+                  Log here →
+                </button>
+              </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {recent.map((l) => {
-                  const color = routineColorById[l.routineId] ?? UI.ink;
+              <div style={{ marginTop: 8, color: "rgba(17,17,17,0.55)" }}>Pick a spot to start your rotation history.</div>
+            )}
+          </section>
+
+          {/* Main layout */}
+          <section className="rtGrid">
+            {/* Spot buttons */}
+            <SectionCard title="Choose a jab spot" right={<span style={{ color: "rgba(17,17,17,0.55)", fontSize: 12, fontWeight: 900 }}>{view.toUpperCase()}</span>}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {grouped.order.map((g) => {
+                  const spots = grouped.map[g] ?? [];
                   return (
-                    <div
-                      key={l.id}
-                      style={{
-                        border: `1px solid ${UI.line}`,
-                        borderRadius: 18,
-                        padding: 12,
-                        background: "#fff",
-                        boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                          <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
-                          <div style={{ fontWeight: 900 }}>
-                            {l.routineName} • {l.spotLabel}
-                            {l.doseMg ? <span style={{ color: UI.muted, fontWeight: 800 }}> • {l.doseMg}mg</span> : null}
-                          </div>
+                    <div key={g}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                        <div style={{ fontWeight: 900, color: UI.ink }}>
+                          {groupEmoji(g)} {groupLabel(g)}
                         </div>
-
-                        <button
-                          onClick={() => deleteLog(l.id)}
-                          className="pillHover"
-                          style={{
-                            padding: "8px 10px",
-                            borderRadius: 999,
-                            border: `1px solid ${UI.line}`,
-                            background: "#fff",
-                            cursor: "pointer",
-                            fontWeight: 900,
-                            fontSize: 12,
-                          }}
-                        >
-                          Delete
-                        </button>
                       </div>
 
-                      <div style={{ marginTop: 6, color: UI.muted, fontSize: 12 }}>
-                        {toLocalDateLabel(l.injectedAtISO)} • {toLocalTimeLabel(l.injectedAtISO)} • {l.view}
-                      </div>
+                      <div className="spotGrid">
+                        {spots.map((s) => {
+                          const last = lastUsedBySpot[s.id];
+                          const days = daysAgoFromISO(last);
+                          const never = days >= 9999;
 
-                      {l.notes ? <div style={{ marginTop: 6, color: "#333", fontSize: 12 }}>{l.notes}</div> : null}
+                          return (
+                            <button
+                              key={s.id}
+                              onClick={() => openSheet(s)}
+                              className="pillHover rtBtn"
+                              style={{
+                                textAlign: "left",
+                                padding: 14,
+                                borderRadius: 18,
+                                border: `1px solid rgba(17,17,17,0.18)`,
+                                background: "#fff",
+                                cursor: "pointer",
+                                boxShadow: "0 10px 26px rgba(0,0,0,0.06)",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 8,
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                                <div style={{ fontWeight: 900, color: UI.ink, fontSize: 14 }}>{s.label}</div>
+                                <div
+                                  style={{
+                                    padding: "6px 10px",
+                                    borderRadius: 999,
+                                    border: `1px solid rgba(17,17,17,0.16)`,
+                                    background: never ? "rgba(17,17,17,0.04)" : UI.accentSoft,
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                    color: UI.ink,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {never ? "Never" : `${days}d`}
+                                </div>
+                              </div>
+
+                              <div style={{ color: "rgba(17,17,17,0.60)", fontSize: 12, fontWeight: 800 }}>
+                                Tap to log → opens sheet
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            )}
-          </SectionCard>
-        </section>
+            </SectionCard>
 
-        {/* Sheet */}
-        {sheetOpen && selectedSpot && (
-          <GlassOverlay onClose={closeSheet} align="bottom">
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                background: "rgba(255,255,255,0.88)",
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
-                width: "min(760px, 100%)",
-                borderRadius: 20,
-                border: `1px solid ${UI.line}`,
-                boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
-                overflow: "hidden",
-                maxHeight: "88vh",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
-
-              <div
-                style={{
-                  padding: 14,
-                  borderBottom: `1px solid ${UI.line}`,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  alignItems: "center",
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 900 }}>Log injection</div>
-                  <div style={{ color: UI.muted, fontSize: 13 }}>
-                    {selectedSpot.label} • {selectedSpot.view}
-                  </div>
-                </div>
-
-                <button
-                  onClick={closeSheet}
-                  className="pillHover"
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${UI.line}`,
-                    background: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 900,
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div style={{ padding: 14, overflowY: "auto" }}>
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>Routine</div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {routines.map((r) => {
-                    const active = r.id === sheetRoutineId;
-                    const color = routineColorById[r.id] ?? UI.ink;
+            {/* Recent */}
+            <SectionCard title="Recent injections">
+              {recent.length === 0 ? (
+                <div style={{ color: "rgba(17,17,17,0.60)", fontWeight: 700 }}>No injections logged yet.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {recent.map((l) => {
+                    const color = routineColorById[l.routineId] ?? UI.ink;
                     return (
-                      <button
-                        key={r.id}
-                        onClick={() => setSheetRoutineId(r.id)}
-                        className={`pillHover ${active ? "pulseActive" : ""}`}
+                      <div
+                        key={l.id}
                         style={{
-                          padding: "12px 12px",
-                          borderRadius: 16,
-                          border: active ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
-                          background: active ? UI.accentSoft : "#fff",
-                          color: UI.ink,
-                          cursor: "pointer",
-                          fontWeight: 900,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
+                          border: `1px solid rgba(17,17,17,0.16)`,
+                          borderRadius: 18,
+                          padding: 12,
+                          background: "#fff",
+                          boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
                         }}
                       >
-                        <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
-                        {r.name}
-                      </button>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: 999, background: color, flex: "0 0 auto" }} />
+                            <div style={{ fontWeight: 900, color: UI.ink, fontSize: 13, lineHeight: 1.2 }}>
+                              {l.routineName} • {l.spotLabel}
+                              {l.doseMg ? <span style={{ color: "rgba(17,17,17,0.55)", fontWeight: 800 }}> • {l.doseMg}mg</span> : null}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => deleteLog(l.id)}
+                            className="pillHover rtBtn"
+                            style={{
+                              padding: "10px 12px",
+                              borderRadius: 999,
+                              border: `1px solid rgba(17,17,17,0.18)`,
+                              background: "#fff",
+                              cursor: "pointer",
+                              fontWeight: 900,
+                              fontSize: 12,
+                              boxShadow: "0 6px 18px rgba(0,0,0,0.05)",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+
+                        <div style={{ marginTop: 6, color: "rgba(17,17,17,0.60)", fontSize: 12, fontWeight: 700 }}>
+                          {toLocalDateLabel(l.injectedAtISO)} • {toLocalTimeLabel(l.injectedAtISO)} • {l.view}
+                        </div>
+
+                        {l.notes ? <div style={{ marginTop: 6, color: "rgba(17,17,17,0.78)", fontSize: 12 }}>{l.notes}</div> : null}
+                      </div>
                     );
                   })}
                 </div>
+              )}
+            </SectionCard>
+          </section>
 
-                <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ flex: "1 1 180px" }}>
-                    <div style={{ fontWeight: 900, marginBottom: 8 }}>Date</div>
-                    <input
-                      type="date"
-                      value={sheetDateYMD}
-                      onChange={(e) => setSheetDateYMD(e.target.value)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontSize: 16,
-                        fontWeight: 900,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ flex: "1 1 160px" }}>
-                    <div style={{ fontWeight: 900, marginBottom: 8 }}>Time</div>
-                    <input
-                      type="time"
-                      value={sheetTimeHHMM}
-                      onChange={(e) => setSheetTimeHHMM(e.target.value)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontSize: 16,
-                        fontWeight: 900,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setSheetDateYMD(todayYMD());
-                      setSheetTimeHHMM(nowTimeHHMM());
-                    }}
-                    className="pillHover"
-                    style={{
-                      marginTop: 26,
-                      padding: "12px 12px",
-                      borderRadius: 999,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                      cursor: "pointer",
-                      fontWeight: 900,
-                    }}
-                  >
-                    Now
-                  </button>
-                </div>
-
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Optional dose (mg)</div>
-                  <input
-                    value={sheetDoseMg}
-                    onChange={(e) => setSheetDoseMg(e.target.value)}
-                    placeholder="e.g. 5"
-                    className="inputPremium"
-                    style={{
-                      width: "min(220px, 100%)",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      fontSize: 16,
-                      background: "#fff",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Notes (optional)</div>
-                  <textarea
-                    value={sheetNotes}
-                    onChange={(e) => setSheetNotes(e.target.value)}
-                    placeholder="e.g. Easy today"
-                    className="inputPremium"
-                    style={{
-                      width: "100%",
-                      minHeight: 84,
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      fontSize: 15,
-                      resize: "vertical",
-                      background: "#fff",
-                    }}
-                  />
-                </div>
+          {/* Sheet */}
+          {sheetOpen && selectedSpot && (
+            <GlassOverlay onClose={closeSheet} align="bottom">
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: "rgba(255,255,255,0.90)",
+                  backdropFilter: "blur(14px)",
+                  WebkitBackdropFilter: "blur(14px)",
+                  width: "min(760px, 100%)",
+                  borderRadius: 20,
+                  border: `1px solid rgba(17,17,17,0.18)`,
+                  boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
+                  overflow: "hidden",
+                  maxHeight: "88vh",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.22)", margin: "10px auto 0" }} />
 
                 <div
                   style={{
-                    marginTop: 14,
-                    border: `1px solid ${UI.line}`,
-                    borderRadius: 18,
                     padding: 14,
-                    background: "linear-gradient(180deg, #fff 0%, #fff7f3 100%)",
+                    borderBottom: `1px solid rgba(17,17,17,0.12)`,
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: 12,
+                    gap: 10,
                     alignItems: "center",
-                    flexWrap: "wrap",
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 900 }}>Ready to save</div>
-                    <div style={{ fontSize: 12, color: UI.muted, marginTop: 4 }}>
-                      <b>{routineById[sheetRoutineId]?.name ?? "Routine"}</b> • <b>{selectedSpot.label}</b> •{" "}
-                      <b>
-                        {sheetDateYMD} {sheetTimeHHMM}
-                      </b>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: UI.ink }}>Log injection</div>
+                    <div style={{ color: "rgba(17,17,17,0.60)", fontSize: 13, fontWeight: 700 }}>
+                      {selectedSpot.label} • {selectedSpot.view}
                     </div>
                   </div>
 
                   <button
-                    onClick={logInjection}
-                    className="pillHover"
+                    onClick={closeSheet}
+                    className="pillHover rtBtn"
                     style={{
-                      padding: "14px 16px",
-                      borderRadius: 16,
-                      border: `1px solid ${UI.accent}`,
-                      background: UI.accent,
-                      color: "#fff",
+                      padding: "10px 12px",
+                      borderRadius: 999,
+                      border: `1px solid rgba(17,17,17,0.18)`,
+                      background: "#fff",
                       cursor: "pointer",
                       fontWeight: 900,
-                      fontSize: 16,
-                      boxShadow: UI.shadow,
+                      boxShadow: "0 6px 18px rgba(0,0,0,0.05)",
                     }}
                   >
-                    Log injection →
+                    Close
                   </button>
                 </div>
+
+                <div style={{ padding: 14, overflowY: "auto" }}>
+                  <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Routine</div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {routines.map((r) => {
+                      const active = r.id === sheetRoutineId;
+                      const color = routineColorById[r.id] ?? UI.ink;
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => setSheetRoutineId(r.id)}
+                          className={`pillHover rtBtn ${active ? "pulseActive" : ""}`}
+                          style={{
+                            padding: "12px 12px",
+                            borderRadius: 16,
+                            border: active ? `2px solid ${UI.accent}` : `1px solid rgba(17,17,17,0.18)`,
+                            background: active ? UI.accentSoft : "#fff",
+                            color: UI.ink,
+                            cursor: "pointer",
+                            fontWeight: 900,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            boxShadow: active ? "0 10px 26px rgba(0,0,0,0.06)" : "0 6px 18px rgba(0,0,0,0.04)",
+                          }}
+                        >
+                          <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
+                          {r.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <div style={{ flex: "1 1 180px" }}>
+                      <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Date</div>
+                      <input
+                        type="date"
+                        value={sheetDateYMD}
+                        onChange={(e) => setSheetDateYMD(e.target.value)}
+                        className="inputPremium"
+                        style={{
+                          width: "100%",
+                          padding: 12,
+                          borderRadius: 14,
+                          border: `1px solid rgba(17,17,17,0.18)`,
+                          fontSize: 16,
+                          fontWeight: 900,
+                          background: "#fff",
+                          color: UI.ink,
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ flex: "1 1 160px" }}>
+                      <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Time</div>
+                      <input
+                        type="time"
+                        value={sheetTimeHHMM}
+                        onChange={(e) => setSheetTimeHHMM(e.target.value)}
+                        className="inputPremium"
+                        style={{
+                          width: "100%",
+                          padding: 12,
+                          borderRadius: 14,
+                          border: `1px solid rgba(17,17,17,0.18)`,
+                          fontSize: 16,
+                          fontWeight: 900,
+                          background: "#fff",
+                          color: UI.ink,
+                        }}
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setSheetDateYMD(todayYMD());
+                        setSheetTimeHHMM(nowTimeHHMM());
+                      }}
+                      className="pillHover rtBtn"
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: 999,
+                        border: `1px solid rgba(17,17,17,0.18)`,
+                        background: "#fff",
+                        cursor: "pointer",
+                        fontWeight: 900,
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
+                      }}
+                    >
+                      Now
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Optional dose (mg)</div>
+                    <input
+                      value={sheetDoseMg}
+                      onChange={(e) => setSheetDoseMg(e.target.value)}
+                      placeholder="e.g. 5"
+                      className="inputPremium"
+                      style={{
+                        width: "min(220px, 100%)",
+                        padding: 12,
+                        borderRadius: 14,
+                        border: `1px solid rgba(17,17,17,0.18)`,
+                        fontSize: 16,
+                        background: "#fff",
+                        color: UI.ink,
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Notes (optional)</div>
+                    <textarea
+                      value={sheetNotes}
+                      onChange={(e) => setSheetNotes(e.target.value)}
+                      placeholder="e.g. Easy today"
+                      className="inputPremium"
+                      style={{
+                        width: "100%",
+                        minHeight: 84,
+                        padding: 12,
+                        borderRadius: 14,
+                        border: `1px solid rgba(17,17,17,0.18)`,
+                        fontSize: 15,
+                        resize: "vertical",
+                        background: "#fff",
+                        color: UI.ink,
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 14,
+                      border: `1px solid rgba(17,17,17,0.16)`,
+                      borderRadius: 18,
+                      padding: 14,
+                      background: "linear-gradient(180deg, #ffffff 0%, #fff7f3 100%)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 900, color: UI.ink }}>Ready to save</div>
+                      <div style={{ fontSize: 12, color: "rgba(17,17,17,0.60)", marginTop: 4, fontWeight: 700 }}>
+                        <b>{routineById[sheetRoutineId]?.name ?? "Routine"}</b> • <b>{selectedSpot.label}</b> •{" "}
+                        <b>
+                          {sheetDateYMD} {sheetTimeHHMM}
+                        </b>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={logInjection}
+                      className="pillHover rtBtn"
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: 16,
+                        border: `1px solid ${UI.accent}`,
+                        background: UI.accent,
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontWeight: 900,
+                        fontSize: 16,
+                        boxShadow: UI.shadow,
+                        width: "min(260px, 100%)",
+                      }}
+                    >
+                      Log injection →
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </GlassOverlay>
-        )}
+            </GlassOverlay>
+          )}
+        </div>
       </AppPage>
     </AppShell>
   );
