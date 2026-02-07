@@ -1,44 +1,39 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { AppShell, AppPage, GlassOverlay, UI } from "../components/AppShell";
+import { AppShell, AppPage, UI } from "../components/AppShell";
 
-type HealthLog = {
+type Intensity = "low" | "med" | "high";
+
+type HealthEntry = {
   id: number;
-  ymd: string; // YYYY-MM-DD (local day)
-  timeHHMM: string; // local time
+  dateTimeISO: string; // when the entry is for
+  createdAtISO: string;
+
   weightKg?: string;
+  restingHr?: string;
   bpSys?: string;
   bpDia?: string;
-  restingHr?: string;
 
   waistCm?: string;
   hipsCm?: string;
   chestCm?: string;
 
   exerciseType?: string;
-  exerciseMins?: string;
-  exerciseIntensity?: "low" | "med" | "high";
+  exerciseMinutes?: string;
+  exerciseIntensity?: Intensity;
 
   notes?: string;
-
-  createdAtISO: string;
 };
 
-const STORAGE_KEY = "hb_logs_v1";
+const STORAGE_KEY = "health_entries_v2";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function todayYMD() {
-  const d = new Date();
+function toYMD(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function nowHHMM() {
-  const d = new Date();
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 function monthLabel(date: Date) {
@@ -53,169 +48,120 @@ function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0);
 }
 
-// Monday-first index
-function mondayIndex(jsDay: number) {
-  return (jsDay + 6) % 7;
+// Monday-first index (Mon=0...Sun=6)
+function mondayIndex(daySun0: number) {
+  return (daySun0 + 6) % 7;
 }
 
-function hasAnyData(l: Partial<HealthLog>) {
-  return Boolean(
-    (l.weightKg && l.weightKg.trim()) ||
-      ((l.bpSys && l.bpSys.trim()) || (l.bpDia && l.bpDia.trim())) ||
-      (l.restingHr && l.restingHr.trim()) ||
-      (l.waistCm && l.waistCm.trim()) ||
-      (l.hipsCm && l.hipsCm.trim()) ||
-      (l.chestCm && l.chestCm.trim()) ||
-      (l.exerciseType && l.exerciseType.trim()) ||
-      (l.exerciseMins && l.exerciseMins.trim()) ||
-      l.exerciseIntensity ||
-      (l.notes && l.notes.trim())
-  );
+function dateToLocalDateValue(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function SectionCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        border: `1px solid ${UI.line}`,
-        borderRadius: 18,
-        padding: 14,
-        background: UI.card,
-        boxShadow: UI.shadow,
-      }}
-    >
-      <div style={{ fontWeight: 900, marginBottom: 10 }}>{title}</div>
-      {children}
-    </div>
-  );
+function timeToLocalTimeValue(d: Date) {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-export default function HealthBoardPage() {
-  const [logs, setLogs] = useState<HealthLog[]>([]);
-  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
-  const [selectedDayYMD, setSelectedDayYMD] = useState<string | null>(null);
+function safeNumText(s: string) {
+  const t = s.trim();
+  if (!t) return "";
+  // allow 12, 12.3, 0.5
+  return /^(\d+(\.\d+)?)$/.test(t) ? t : t;
+}
 
-  // Form state (new entry)
-  const [ymd, setYmd] = useState<string>(todayYMD());
-  const [timeHHMM, setTimeHHMM] = useState<string>(nowHHMM());
+function useIsMobile(maxPx = 720) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${maxPx}px)`);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, [maxPx]);
+
+  return isMobile;
+}
+
+export default function HealthPage() {
+  const isMobile = useIsMobile(720);
+
+  const [entries, setEntries] = useState<HealthEntry[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Form state
+  const [dateVal, setDateVal] = useState<string>(dateToLocalDateValue(new Date()));
+  const [timeVal, setTimeVal] = useState<string>(timeToLocalTimeValue(new Date()));
 
   const [weightKg, setWeightKg] = useState("");
+  const [restingHr, setRestingHr] = useState("");
   const [bpSys, setBpSys] = useState("");
   const [bpDia, setBpDia] = useState("");
-  const [restingHr, setRestingHr] = useState("");
 
   const [waistCm, setWaistCm] = useState("");
   const [hipsCm, setHipsCm] = useState("");
   const [chestCm, setChestCm] = useState("");
 
   const [exerciseType, setExerciseType] = useState("");
-  const [exerciseMins, setExerciseMins] = useState("");
-  const [exerciseIntensity, setExerciseIntensity] = useState<
-    "low" | "med" | "high" | ""
-  >("");
+  const [exerciseMinutes, setExerciseMinutes] = useState("");
+  const [exerciseIntensity, setExerciseIntensity] = useState<Intensity>("low");
 
   const [notes, setNotes] = useState("");
 
-  // Load + save
+  // Collapsible sections
+  const [openMeasurements, setOpenMeasurements] = useState(false);
+  const [openExercise, setOpenExercise] = useState(false);
+  const [openNotes, setOpenNotes] = useState(false);
+
+  // Calendar
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
+  const [selectedDayYMD, setSelectedDayYMD] = useState<string | null>(null);
+
+  // Load / Save
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setLogs(JSON.parse(saved));
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setEntries(parsed);
+      } catch {
+        // ignore
+      }
+    }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
-  }, [logs]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  }, [entries]);
 
-  const logsByDay = useMemo(() => {
-    const map: Record<string, HealthLog[]> = {};
-    for (const l of logs) {
-      if (!map[l.ymd]) map[l.ymd] = [];
-      map[l.ymd].push(l);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 1100);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const entriesByDay = useMemo(() => {
+    const map: Record<string, HealthEntry[]> = {};
+    for (const e of entries) {
+      const key = toYMD(new Date(e.dateTimeISO));
+      if (!map[key]) map[key] = [];
+      map[key].push(e);
     }
-    Object.keys(map).forEach((k) =>
-      map[k].sort((a, b) => a.timeHHMM.localeCompare(b.timeHHMM))
-    );
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => new Date(b.dateTimeISO).getTime() - new Date(a.dateTimeISO).getTime());
+    }
     return map;
-  }, [logs]);
+  }, [entries]);
 
-  const dayLogs = selectedDayYMD ? logsByDay[selectedDayYMD] ?? [] : [];
+  const todayYMD = toYMD(new Date());
+  const dayEntries = selectedDayYMD ? entriesByDay[selectedDayYMD] ?? [] : [];
 
-  // Snapshot (latest)
-  const latest = useMemo(() => logs[0], [logs]);
+  const latest = useMemo(() => {
+    if (!entries.length) return null;
+    const sorted = [...entries].sort((a, b) => new Date(b.dateTimeISO).getTime() - new Date(a.dateTimeISO).getTime());
+    return sorted[0];
+  }, [entries]);
 
-  function resetFormToNow() {
-    setYmd(todayYMD());
-    setTimeHHMM(nowHHMM());
-  }
-
-  function clearForm() {
-    setWeightKg("");
-    setBpSys("");
-    setBpDia("");
-    setRestingHr("");
-    setWaistCm("");
-    setHipsCm("");
-    setChestCm("");
-    setExerciseType("");
-    setExerciseMins("");
-    setExerciseIntensity("");
-    setNotes("");
-  }
-
-  function saveEntry() {
-    const entry: Partial<HealthLog> = {
-      ymd,
-      timeHHMM,
-      weightKg,
-      bpSys,
-      bpDia,
-      restingHr,
-      waistCm,
-      hipsCm,
-      chestCm,
-      exerciseType,
-      exerciseMins,
-      exerciseIntensity: exerciseIntensity || undefined,
-      notes,
-    };
-
-    if (!hasAnyData(entry)) return;
-
-    const item: HealthLog = {
-      id: Date.now(),
-      ymd,
-      timeHHMM,
-      weightKg: weightKg.trim() ? weightKg.trim() : undefined,
-      bpSys: bpSys.trim() ? bpSys.trim() : undefined,
-      bpDia: bpDia.trim() ? bpDia.trim() : undefined,
-      restingHr: restingHr.trim() ? restingHr.trim() : undefined,
-      waistCm: waistCm.trim() ? waistCm.trim() : undefined,
-      hipsCm: hipsCm.trim() ? hipsCm.trim() : undefined,
-      chestCm: chestCm.trim() ? chestCm.trim() : undefined,
-      exerciseType: exerciseType.trim() ? exerciseType.trim() : undefined,
-      exerciseMins: exerciseMins.trim() ? exerciseMins.trim() : undefined,
-      exerciseIntensity: exerciseIntensity ? exerciseIntensity : undefined,
-      notes: notes.trim() ? notes.trim() : undefined,
-      createdAtISO: new Date().toISOString(),
-    };
-
-    setLogs((prev) => [item, ...prev]);
-    clearForm();
-    resetFormToNow();
-  }
-
-  function deleteLog(id: number) {
-    setLogs((prev) => prev.filter((x) => x.id !== id));
-  }
-
-  // Calendar grid
-  const grid = useMemo(() => {
+  const calendarCells = useMemo(() => {
     const start = startOfMonth(calendarMonth);
     const end = endOfMonth(calendarMonth);
 
@@ -224,659 +170,582 @@ export default function HealthBoardPage() {
     const totalCells = Math.ceil((offset + daysInMonth) / 7) * 7;
 
     const cells: Array<{ ymd?: string; dayNum?: number }> = [];
-
     for (let i = 0; i < totalCells; i++) {
       const dayNum = i - offset + 1;
       if (dayNum >= 1 && dayNum <= daysInMonth) {
-        const yyyy = start.getFullYear();
-        const mm = pad2(start.getMonth() + 1);
-        const dd = pad2(dayNum);
-        cells.push({ ymd: `${yyyy}-${mm}-${dd}`, dayNum });
+        const ymd = `${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(dayNum)}`;
+        cells.push({ ymd, dayNum });
       } else {
         cells.push({});
       }
     }
-
     return cells;
   }, [calendarMonth]);
 
   const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+  function setNowTime() {
+    const d = new Date();
+    setDateVal(dateToLocalDateValue(d));
+    setTimeVal(timeToLocalTimeValue(d));
+  }
+
+  function clearForm() {
+    setWeightKg("");
+    setRestingHr("");
+    setBpSys("");
+    setBpDia("");
+    setWaistCm("");
+    setHipsCm("");
+    setChestCm("");
+    setExerciseType("");
+    setExerciseMinutes("");
+    setExerciseIntensity("low");
+    setNotes("");
+    setToast("Cleared");
+  }
+
+  function saveEntry() {
+    // Create an ISO from local date + time safely
+    const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(dateVal) ? dateVal : dateToLocalDateValue(new Date());
+    const safeTime = /^\d{2}:\d{2}$/.test(timeVal) ? timeVal : timeToLocalTimeValue(new Date());
+    const dtLocal = new Date(`${safeDate}T${safeTime}`);
+
+    const item: HealthEntry = {
+      id: Date.now(),
+      dateTimeISO: dtLocal.toISOString(),
+      createdAtISO: new Date().toISOString(),
+
+      weightKg: safeNumText(weightKg) || undefined,
+      restingHr: safeNumText(restingHr) || undefined,
+      bpSys: safeNumText(bpSys) || undefined,
+      bpDia: safeNumText(bpDia) || undefined,
+
+      waistCm: safeNumText(waistCm) || undefined,
+      hipsCm: safeNumText(hipsCm) || undefined,
+      chestCm: safeNumText(chestCm) || undefined,
+
+      exerciseType: exerciseType.trim() || undefined,
+      exerciseMinutes: safeNumText(exerciseMinutes) || undefined,
+      exerciseIntensity: exerciseType.trim() || exerciseMinutes.trim() ? exerciseIntensity : undefined,
+
+      notes: notes.trim() || undefined,
+    };
+
+    setEntries((prev) => [item, ...prev]);
+    setToast("Saved ✓");
+  }
+
+  function deleteEntry(id: number) {
+    setEntries((prev) => prev.filter((x) => x.id !== id));
+    setToast("Deleted");
+  }
+
+  function openDay(ymd: string) {
+    setSelectedDayYMD(ymd);
+  }
+
+  // ---------- Styles (mobile-first tweaks without CSS files) ----------
+  const cardPad = isMobile ? 12 : 14;
+  const cardRadius = 18;
+
+  const labelStyle: React.CSSProperties = {
+    fontWeight: 900,
+    color: isMobile ? "rgba(17,17,17,0.86)" : "rgba(17,17,17,0.74)",
+    marginBottom: isMobile ? 6 : 8,
+    fontSize: isMobile ? 12 : 13,
+  };
+
+  const sectionTitleStyle: React.CSSProperties = {
+    fontWeight: 900,
+    fontSize: isMobile ? 16 : 18,
+    color: UI.ink,
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    minWidth: 0,
+    padding: isMobile ? 11 : 12,
+    borderRadius: 14,
+    border: `1px solid ${UI.line}`,
+    fontWeight: 900,
+    background: "#fff",
+    color: UI.ink,
+    boxSizing: "border-box",
+  };
+
+  const pillButton = (active = false): React.CSSProperties => ({
+    padding: isMobile ? "10px 12px" : "10px 12px",
+    borderRadius: 999,
+    border: active ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
+    background: active ? UI.accentSoft : "#fff",
+    cursor: "pointer",
+    fontWeight: 900,
+    boxShadow: UI.shadow,
+    whiteSpace: "nowrap",
+    color: UI.ink,
+  });
+
+  const collapsibleHeader = (open: boolean): React.CSSProperties => ({
+    width: "100%",
+    padding: isMobile ? "12px 12px" : "12px 14px",
+    borderRadius: 16,
+    border: open ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
+    background: open ? "linear-gradient(180deg,#fff 0%, #fff7f3 100%)" : UI.accentSoft,
+    cursor: "pointer",
+    fontWeight: 900,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    boxShadow: UI.shadow,
+    color: UI.ink, // ✅ makes the text readable (was looking “washed out” on mobile)
+  });
+
+  const smallMuted: React.CSSProperties = {
+    color: isMobile ? "rgba(17,17,17,0.70)" : UI.muted,
+    fontWeight: 800,
+  };
+
+  // Calendar sizing fix
+  const calGap = isMobile ? 6 : 8;
+  const calCellH = isMobile ? 66 : 92;
+
   return (
-    <AppShell
-      title="Health Board"
-      subtitle="Weight, measurements, BP, and exercise — all in one place."
-    >
+    <AppShell title="Health Board" subtitle="Weight, measurements, BP, and exercise — all in one place.">
       <AppPage>
-        {/* Premium micro-animations */}
-        <style jsx global>{`
-          @keyframes softPulse {
-            0% {
-              transform: translateZ(0) scale(1);
-            }
-            50% {
-              transform: translateZ(0) scale(1.02);
-            }
-            100% {
-              transform: translateZ(0) scale(1);
-            }
-          }
-          .pillHover {
-            transition: transform 160ms ease, box-shadow 160ms ease,
-              background 160ms ease, border-color 160ms ease;
-          }
-          .pillHover:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
-          }
-          .pulseActive {
-            animation: softPulse 1.6s ease-in-out infinite;
-          }
+        {/* Toast */}
+        {toast && (
+          <div
+            style={{
+              position: "fixed",
+              top: 14,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: UI.ink,
+              color: "#fff",
+              padding: "10px 14px",
+              borderRadius: 999,
+              fontWeight: 900,
+              zIndex: 100,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+            }}
+          >
+            {toast}
+          </div>
+        )}
 
-          @media (max-width: 980px) {
-            .hbGrid2 {
-              grid-template-columns: 1fr !important;
-            }
-          }
-        `}</style>
-
-        {/* Snapshot */}
+        {/* Latest snapshot */}
         <section
           style={{
-            marginTop: 14,
+            marginTop: 12,
             border: `1px solid ${UI.line}`,
-            borderRadius: 18,
-            padding: 14,
-            background: "linear-gradient(180deg, #fff 0%, #fff7f3 100%)",
+            borderRadius: cardRadius,
+            padding: cardPad,
+            background: "#fff",
             boxShadow: UI.shadow,
           }}
         >
-          <div style={{ fontWeight: 900 }}>Latest snapshot</div>
-          {latest ? (
-            <div
-              style={{
-                marginTop: 8,
-                display: "flex",
-                gap: 12,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <div style={{ fontWeight: 900 }}>
-                {latest.ymd} • {latest.timeHHMM}
-              </div>
-              {latest.weightKg ? (
-                <div>
-                  ⚖️ <b>{latest.weightKg}kg</b>
-                </div>
-              ) : null}
-              {latest.bpSys && latest.bpDia ? (
-                <div>
-                  🩺{" "}
-                  <b>
-                    {latest.bpSys}/{latest.bpDia}
-                  </b>
-                </div>
-              ) : null}
-              {latest.restingHr ? (
-                <div>
-                  ❤️ <b>{latest.restingHr} bpm</b>
-                </div>
-              ) : null}
-              {latest.exerciseType ? (
-                <div>
-                  🏃 <b>{latest.exerciseType}</b>
-                  {latest.exerciseMins ? ` • ${latest.exerciseMins} min` : ""}
-                  {latest.exerciseIntensity
-                    ? ` • ${latest.exerciseIntensity}`
-                    : ""}
-                </div>
-              ) : null}
-            </div>
+          <div style={sectionTitleStyle}>Latest snapshot</div>
+
+          {!latest ? (
+            <div style={{ marginTop: 8, ...smallMuted }}>No entries yet. Add your first check-in below.</div>
           ) : (
-            <div style={{ marginTop: 8, color: UI.muted }}>
-              No entries yet. Add your first check-in below.
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <div style={{ fontWeight: 900 }}>
+                  {new Date(latest.dateTimeISO).toLocaleString(undefined, { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </div>
+                <button onClick={() => openDay(toYMD(new Date(latest.dateTimeISO)))} style={pillButton(false)}>
+                  View day →
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", ...smallMuted }}>
+                {latest.weightKg ? (
+                  <div>
+                    ⚖️ <b style={{ color: UI.ink }}>{latest.weightKg}kg</b>
+                  </div>
+                ) : null}
+                {latest.restingHr ? (
+                  <div>
+                    ❤️ <b style={{ color: UI.ink }}>{latest.restingHr} bpm</b>
+                  </div>
+                ) : null}
+                {latest.bpSys && latest.bpDia ? (
+                  <div>
+                    🩺 <b style={{ color: UI.ink }}>{latest.bpSys}/{latest.bpDia}</b>
+                  </div>
+                ) : null}
+                {latest.exerciseMinutes ? (
+                  <div>
+                    🏃 <b style={{ color: UI.ink }}>{latest.exerciseMinutes} min</b>
+                  </div>
+                ) : null}
+              </div>
+
+              {latest.notes ? <div style={{ marginTop: 2, color: "rgba(17,17,17,0.80)", fontWeight: 700 }}>{latest.notes}</div> : null}
             </div>
           )}
         </section>
 
-        {/* Layout: form + calendar */}
+        {/* New entry */}
         <section
-          className="hbGrid2"
           style={{
             marginTop: 14,
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 14,
+            border: `1px solid ${UI.line}`,
+            borderRadius: cardRadius,
+            padding: cardPad,
+            background: "#fff",
+            boxShadow: UI.shadow,
           }}
         >
-          {/* FORM */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <SectionCard title="New entry">
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <div style={{ flex: "1 1 180px" }}>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Date</div>
-                  <input
-                    type="date"
-                    value={ymd}
-                    onChange={(e) => setYmd(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      fontWeight: 900,
-                      background: "#fff",
-                    }}
-                  />
-                </div>
-                <div style={{ flex: "1 1 160px" }}>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Time</div>
-                  <input
-                    type="time"
-                    value={timeHHMM}
-                    onChange={(e) => setTimeHHMM(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      fontWeight: 900,
-                      background: "#fff",
-                    }}
-                  />
-                </div>
+          <div style={sectionTitleStyle}>New entry</div>
 
-                <button
-                  onClick={resetFormToNow}
-                  className="pillHover"
-                  style={{
-                    marginTop: 26,
-                    padding: "12px 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${UI.line}`,
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    background: "#fff",
-                  }}
-                >
+          {/* Date + Time */}
+          <div
+            style={{
+              marginTop: 10,
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div style={labelStyle}>Date</div>
+              <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={inputStyle} />
+            </div>
+
+            <div>
+              <div style={labelStyle}>Time</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 110px", gap: 10, alignItems: "center" }}>
+                <input type="time" value={timeVal} onChange={(e) => setTimeVal(e.target.value)} style={inputStyle} />
+                <button onClick={setNowTime} style={{ ...pillButton(false), width: isMobile ? "100%" : "auto" }}>
                   Now
                 </button>
               </div>
+            </div>
+          </div>
 
+          {/* Core vitals (✅ mobile: 2 columns so the block is smaller) */}
+          <div
+            style={{
+              marginTop: 12,
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr",
+              gap: isMobile ? 10 : 10,
+              alignItems: "start",
+            }}
+          >
+            <div>
+              <div style={labelStyle}>Weight (kg)</div>
+              <input value={weightKg} onChange={(e) => setWeightKg(e.target.value)} placeholder="e.g. 78.4" style={inputStyle} />
+            </div>
+
+            <div>
+              <div style={labelStyle}>Resting HR (bpm)</div>
+              <input value={restingHr} onChange={(e) => setRestingHr(e.target.value)} placeholder="e.g. 62" style={inputStyle} />
+            </div>
+
+            <div>
+              <div style={labelStyle}>BP (sys)</div>
+              <input value={bpSys} onChange={(e) => setBpSys(e.target.value)} placeholder="e.g. 120" style={inputStyle} />
+            </div>
+
+            <div>
+              <div style={labelStyle}>BP (dia)</div>
+              <input value={bpDia} onChange={(e) => setBpDia(e.target.value)} placeholder="e.g. 80" style={inputStyle} />
+            </div>
+          </div>
+
+          {/* Collapsibles */}
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Measurements */}
+            <button onClick={() => setOpenMeasurements((v) => !v)} style={collapsibleHeader(openMeasurements)}>
+              <span>Measurements (optional)</span>
+              <span style={{ color: "rgba(17,17,17,0.70)", fontWeight: 900 }}>{openMeasurements ? "−" : "+"}</span>
+            </button>
+
+            {openMeasurements && (
               <div
                 style={{
-                  marginTop: 12,
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, 1fr)",
-                  gap: 10,
+                  border: `1px solid ${UI.line}`,
+                  borderRadius: 16,
+                  padding: isMobile ? 12 : 14,
+                  background: "#fff",
+                  boxShadow: UI.shadow,
                 }}
               >
-                <div>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>
-                    Weight (kg)
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 10 }}>
+                  <div>
+                    <div style={labelStyle}>Waist (cm)</div>
+                    <input value={waistCm} onChange={(e) => setWaistCm(e.target.value)} placeholder="Waist" style={inputStyle} />
                   </div>
-                  <input
-                    value={weightKg}
-                    onChange={(e) => setWeightKg(e.target.value)}
-                    placeholder="e.g. 78.4"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>
-                    Resting HR (bpm)
+                  <div>
+                    <div style={labelStyle}>Hips (cm)</div>
+                    <input value={hipsCm} onChange={(e) => setHipsCm(e.target.value)} placeholder="Hips" style={inputStyle} />
                   </div>
-                  <input
-                    value={restingHr}
-                    onChange={(e) => setRestingHr(e.target.value)}
-                    placeholder="e.g. 62"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>
-                    BP systolic
+                  <div>
+                    <div style={labelStyle}>Chest (cm)</div>
+                    <input value={chestCm} onChange={(e) => setChestCm(e.target.value)} placeholder="Chest" style={inputStyle} />
                   </div>
-                  <input
-                    value={bpSys}
-                    onChange={(e) => setBpSys(e.target.value)}
-                    placeholder="e.g. 120"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>
-                    BP diastolic
-                  </div>
-                  <input
-                    value={bpDia}
-                    onChange={(e) => setBpDia(e.target.value)}
-                    placeholder="e.g. 80"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
                 </div>
               </div>
+            )}
 
+            {/* Exercise */}
+            <button onClick={() => setOpenExercise((v) => !v)} style={collapsibleHeader(openExercise)}>
+              <span>Exercise (optional)</span>
+              <span style={{ color: "rgba(17,17,17,0.70)", fontWeight: 900 }}>{openExercise ? "−" : "+"}</span>
+            </button>
+
+            {openExercise && (
               <div
                 style={{
-                  marginTop: 12,
-                  borderTop: `1px solid ${UI.line}`,
-                  paddingTop: 12,
+                  border: `1px solid ${UI.line}`,
+                  borderRadius: 16,
+                  padding: isMobile ? 12 : 14,
+                  background: "#fff",
+                  boxShadow: UI.shadow,
                 }}
               >
-                <div style={{ fontWeight: 900, marginBottom: 10 }}>
-                  Measurements (cm)
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 10 }}>
+                  <div>
+                    <div style={labelStyle}>Type</div>
+                    <input value={exerciseType} onChange={(e) => setExerciseType(e.target.value)} placeholder="walk, gym, yoga..." style={inputStyle} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Minutes</div>
+                    <input value={exerciseMinutes} onChange={(e) => setExerciseMinutes(e.target.value)} placeholder="e.g. 30" style={inputStyle} />
+                  </div>
                 </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, 1fr)",
-                    gap: 10,
-                  }}
-                >
-                  <input
-                    value={waistCm}
-                    onChange={(e) => setWaistCm(e.target.value)}
-                    placeholder="Waist"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
-                  <input
-                    value={hipsCm}
-                    onChange={(e) => setHipsCm(e.target.value)}
-                    placeholder="Hips"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
-                  <input
-                    value={chestCm}
-                    onChange={(e) => setChestCm(e.target.value)}
-                    placeholder="Chest"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
+
+                <div style={{ marginTop: 10 }}>
+                  <div style={labelStyle}>Intensity</div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button onClick={() => setExerciseIntensity("low")} style={pillButton(exerciseIntensity === "low")}>
+                      LOW
+                    </button>
+                    <button onClick={() => setExerciseIntensity("med")} style={pillButton(exerciseIntensity === "med")}>
+                      MED
+                    </button>
+                    <button onClick={() => setExerciseIntensity("high")} style={pillButton(exerciseIntensity === "high")}>
+                      HIGH
+                    </button>
+                  </div>
                 </div>
               </div>
+            )}
 
+            {/* Notes */}
+            <button onClick={() => setOpenNotes((v) => !v)} style={collapsibleHeader(openNotes)}>
+              <span>Notes (optional)</span>
+              <span style={{ color: "rgba(17,17,17,0.70)", fontWeight: 900 }}>{openNotes ? "−" : "+"}</span>
+            </button>
+
+            {openNotes && (
               <div
                 style={{
-                  marginTop: 12,
-                  borderTop: `1px solid ${UI.line}`,
-                  paddingTop: 12,
+                  border: `1px solid ${UI.line}`,
+                  borderRadius: 16,
+                  padding: isMobile ? 12 : 14,
+                  background: "#fff",
+                  boxShadow: UI.shadow,
                 }}
               >
-                <div style={{ fontWeight: 900, marginBottom: 10 }}>Exercise</div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 10,
-                  }}
-                >
-                  <input
-                    value={exerciseType}
-                    onChange={(e) => setExerciseType(e.target.value)}
-                    placeholder="Type (walk, gym, yoga…)"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
-                  <input
-                    value={exerciseMins}
-                    onChange={(e) => setExerciseMins(e.target.value)}
-                    placeholder="Minutes"
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      border: `1px solid ${UI.line}`,
-                      background: "#fff",
-                    }}
-                  />
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 10,
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {(["low", "med", "high"] as const).map((lvl) => {
-                    const active = exerciseIntensity === lvl;
-                    return (
-                      <button
-                        key={lvl}
-                        onClick={() => setExerciseIntensity(active ? "" : lvl)}
-                        className={`pillHover ${active ? "pulseActive" : ""}`}
-                        style={{
-                          padding: "10px 14px",
-                          borderRadius: 999,
-                          border: active
-                            ? `2px solid ${UI.accent}`
-                            : `1px solid ${UI.line}`,
-                          background: active ? UI.accentSoft : "#fff",
-                          cursor: "pointer",
-                          fontWeight: 900,
-                          color: UI.ink,
-                        }}
-                      >
-                        {lvl.toUpperCase()}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>Notes</div>
+                <div style={labelStyle}>Notes</div>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Optional notes…"
+                  placeholder="Optional notes..."
                   style={{
-                    width: "100%",
-                    minHeight: 90,
-                    padding: 12,
-                    borderRadius: 14,
-                    border: `1px solid ${UI.line}`,
+                    ...inputStyle,
+                    minHeight: isMobile ? 90 : 110,
                     resize: "vertical",
-                    background: "#fff",
+                    fontWeight: 800,
                   }}
                 />
               </div>
-
-              <div
-                style={{
-                  marginTop: 12,
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  onClick={saveEntry}
-                  className="pillHover"
-                  style={{
-                    padding: "14px 16px",
-                    borderRadius: 16,
-                    border: `1px solid ${UI.accent}`,
-                    background: UI.accent,
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    fontSize: 16,
-                    boxShadow: UI.shadow,
-                  }}
-                >
-                  Save entry →
-                </button>
-
-                <button
-                  onClick={clearForm}
-                  className="pillHover"
-                  style={{
-                    padding: "14px 16px",
-                    borderRadius: 16,
-                    border: `1px solid ${UI.line}`,
-                    background: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 900,
-                  }}
-                >
-                  Clear
-                </button>
-              </div>
-
-              <div style={{ marginTop: 10, color: UI.muted, fontSize: 12 }}>
-                Everything is stored locally in your browser (no account needed).
-              </div>
-            </SectionCard>
+            )}
           </div>
 
-          {/* CALENDAR */}
+          {/* Actions */}
           <div
             style={{
-              border: `1px solid ${UI.line}`,
-              borderRadius: 18,
-              padding: 14,
-              background: "#fff",
-              boxShadow: UI.shadow,
+              marginTop: 12,
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 180px",
+              gap: 10,
+              alignItems: "center",
             }}
           >
-            <div
+            <button
+              onClick={saveEntry}
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                flexWrap: "wrap",
-                alignItems: "center",
+                width: "100%",
+                padding: isMobile ? "14px 16px" : "14px 16px",
+                borderRadius: 16,
+                border: `1px solid ${UI.accent}`,
+                background: UI.accent,
+                color: "#fff",
+                cursor: "pointer",
+                fontWeight: 900,
+                fontSize: 16,
+                boxShadow: UI.shadow,
               }}
             >
-              <div style={{ fontWeight: 900, fontSize: 16 }}>
-                {monthLabel(calendarMonth)}
-              </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  onClick={() =>
-                    setCalendarMonth(
-                      new Date(
-                        calendarMonth.getFullYear(),
-                        calendarMonth.getMonth() - 1,
-                        1
-                      )
-                    )
-                  }
-                  className="pillHover"
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${UI.line}`,
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    background: "#fff",
-                  }}
-                >
-                  ← Prev
-                </button>
-                <button
-                  onClick={() => setCalendarMonth(new Date())}
-                  className="pillHover"
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${UI.line}`,
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    background: "#fff",
-                  }}
-                >
-                  This month
-                </button>
-                <button
-                  onClick={() =>
-                    setCalendarMonth(
-                      new Date(
-                        calendarMonth.getFullYear(),
-                        calendarMonth.getMonth() + 1,
-                        1
-                      )
-                    )
-                  }
-                  className="pillHover"
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${UI.line}`,
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    background: "#fff",
-                  }}
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
+              Save entry →
+            </button>
 
-            <div
+            <button
+              onClick={clearForm}
               style={{
-                marginTop: 10,
-                display: "grid",
-                gridTemplateColumns: "repeat(7, 1fr)",
-                gap: 8,
+                width: "100%",
+                padding: "14px 16px",
+                borderRadius: 16,
+                border: `1px solid ${UI.line}`,
+                background: "#fff",
+                cursor: "pointer",
+                fontWeight: 900,
+                color: UI.ink,
               }}
             >
-              {weekDays.map((w) => (
-                <div
-                  key={w}
-                  style={{ fontWeight: 900, color: UI.muted, fontSize: 12 }}
-                >
-                  {w}
-                </div>
-              ))}
-            </div>
+              Clear
+            </button>
+          </div>
 
-            <div
-              style={{
-                marginTop: 8,
-                display: "grid",
-                gridTemplateColumns: "repeat(7, 1fr)",
-                gap: 8,
-              }}
-            >
-              {grid.map((c, idx) => {
-                if (!c.ymd) {
-                  return (
-                    <div
-                      key={idx}
-                      style={{
-                        height: 92,
-                        borderRadius: 16,
-                        border: `1px solid rgba(17,17,17,0.06)`,
-                        background: "rgba(255,255,255,0.6)",
-                      }}
-                    />
-                  );
-                }
-
-                const entries = logsByDay[c.ymd] ?? [];
-                const count = entries.length;
-                const isToday = c.ymd === todayYMD();
-
-                return (
-                  <button
-                    key={c.ymd}
-                    onClick={() => setSelectedDayYMD(c.ymd!)}
-                    className="pillHover"
-                    style={{
-                      height: 92,
-                      borderRadius: 16,
-                      border: isToday
-                        ? `2px solid ${UI.accent}`
-                        : `1px solid ${UI.line}`,
-                      background: isToday
-                        ? "linear-gradient(180deg, #fff 0%, #fff7f3 100%)"
-                        : "#fff",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      padding: 10,
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <div style={{ fontWeight: 900 }}>{c.dayNum}</div>
-                      {count > 0 ? (
-                        <div style={{ fontWeight: 900, color: UI.muted, fontSize: 12 }}>
-                          {count}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {entries[0] ? (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: UI.muted,
-                          fontWeight: 900,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {entries[0].weightKg
-                          ? `⚖️ ${entries[0].weightKg}kg`
-                          : entries[0].exerciseType
-                          ? `🏃 ${entries[0].exerciseType}`
-                          : "✅ Logged"}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 12, color: "rgba(17,17,17,0.25)" }}>—</div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+          <div style={{ marginTop: 10, color: isMobile ? "rgba(17,17,17,0.70)" : UI.muted, fontWeight: 800 }}>
+            Everything is stored locally in your browser (no account needed).
           </div>
         </section>
 
-        {/* Day details (glass overlay + sheet) */}
+        {/* Calendar */}
+        <section
+          style={{
+            marginTop: 14,
+            border: `1px solid ${UI.line}`,
+            borderRadius: cardRadius,
+            padding: cardPad,
+            background: "#fff",
+            boxShadow: UI.shadow,
+            overflow: "hidden", // IMPORTANT: prevents the “Sunday pill” overflow look on mobile
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ fontWeight: 900, fontSize: isMobile ? 15 : 16 }}>{monthLabel(calendarMonth)}</div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900, background: "#fff", color: UI.ink }}
+              >
+                ← Prev
+              </button>
+
+              <button
+                onClick={() => setCalendarMonth(new Date())}
+                style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900, background: "#fff", color: UI.ink }}
+              >
+                This month
+              </button>
+
+              <button
+                onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900, background: "#fff", color: UI.ink }}
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: calGap }}>
+            {weekDays.map((w) => (
+              <div key={w} style={{ fontWeight: 900, color: "rgba(17,17,17,0.62)", fontSize: isMobile ? 11 : 12 }}>
+                {w}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: calGap }}>
+            {calendarCells.map((c, idx) => {
+              if (!c.ymd) {
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      height: calCellH,
+                      borderRadius: 16,
+                      border: `1px solid rgba(17,17,17,0.06)`,
+                      background: "rgba(255,255,255,0.6)",
+                    }}
+                  />
+                );
+              }
+
+              const items = entriesByDay[c.ymd] ?? [];
+              const isToday = c.ymd === todayYMD;
+
+              return (
+                <button
+                  key={c.ymd}
+                  onClick={() => openDay(c.ymd!)}
+                  style={{
+                    width: "100%",
+                    minWidth: 0,
+                    height: calCellH,
+                    borderRadius: 16,
+                    border: isToday ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
+                    background: isToday ? "linear-gradient(180deg, #fff 0%, #fff7f3 100%)" : "#fff",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    padding: isMobile ? 8 : 10,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    boxSizing: "border-box",
+                    overflow: "hidden",
+                    color: UI.ink,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontWeight: 900, fontSize: isMobile ? 12 : 14 }}>{c.dayNum}</div>
+                    {items.length > 0 ? (
+                      <div style={{ fontWeight: 900, color: "rgba(17,17,17,0.55)", fontSize: isMobile ? 11 : 12 }}>{items.length}</div>
+                    ) : null}
+                  </div>
+
+                  {items.length ? (
+                    <div style={{ fontSize: isMobile ? 11 : 12, color: "rgba(17,17,17,0.62)", fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      • Entry
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: isMobile ? 11 : 12, color: "rgba(17,17,17,0.25)" }}>—</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Day sheet */}
         {selectedDayYMD && (
-          <GlassOverlay onClose={() => setSelectedDayYMD(null)} align="bottom">
+          <div
+            onClick={() => setSelectedDayYMD(null)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.45)",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "flex-end",
+              padding: 10,
+              zIndex: 70,
+            }}
+          >
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                background: "rgba(255,255,255,0.88)",
+                background: "rgba(255,255,255,0.92)",
                 backdropFilter: "blur(14px)",
                 WebkitBackdropFilter: "blur(14px)",
                 width: "min(900px, 100%)",
@@ -889,137 +758,72 @@ export default function HealthBoardPage() {
                 flexDirection: "column",
               }}
             >
-              <div
-                style={{
-                  width: 44,
-                  height: 5,
-                  borderRadius: 999,
-                  background: "rgba(17,17,17,0.18)",
-                  margin: "10px auto 0",
-                }}
-              />
+              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
 
-              <div
-                style={{
-                  padding: 14,
-                  borderBottom: `1px solid ${UI.line}`,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
+              <div style={{ padding: 14, borderBottom: `1px solid ${UI.line}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 900 }}>Day details</div>
-                  <div style={{ color: UI.muted, fontSize: 13 }}>{selectedDayYMD}</div>
+                  <div style={{ fontSize: 18, fontWeight: 900 }}>Day entries</div>
+                  <div style={{ color: "rgba(17,17,17,0.62)", fontSize: 13, fontWeight: 800 }}>{selectedDayYMD}</div>
                 </div>
 
                 <button
                   onClick={() => setSelectedDayYMD(null)}
-                  className="pillHover"
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${UI.line}`,
-                    background: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 900,
-                  }}
+                  style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
                 >
                   Close
                 </button>
               </div>
 
               <div style={{ padding: 14, overflowY: "auto" }}>
-                {dayLogs.length === 0 ? (
-                  <div style={{ color: UI.muted }}>No health entries for this day.</div>
+                {dayEntries.length === 0 ? (
+                  <div style={{ marginTop: 8, color: "rgba(17,17,17,0.62)", fontWeight: 800 }}>No health entries for this day.</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {dayLogs.map((l) => (
-                      <div
-                        key={l.id}
-                        style={{
-                          border: `1px solid ${UI.line}`,
-                          borderRadius: 18,
-                          padding: 12,
-                          background: "#fff",
-                          boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                          }}
-                        >
-                          <div style={{ fontWeight: 900 }}>{l.timeHHMM}</div>
+                    {dayEntries.map((h) => (
+                      <div key={h.id} style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                          <div style={{ fontWeight: 900 }}>
+                            {new Date(h.dateTimeISO).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </div>
                           <button
-                            onClick={() => deleteLog(l.id)}
-                            className="pillHover"
-                            style={{
-                              padding: "10px 12px",
-                              borderRadius: 999,
-                              border: `1px solid ${UI.line}`,
-                              background: "#fff",
-                              cursor: "pointer",
-                              fontWeight: 900,
-                            }}
+                            onClick={() => deleteEntry(h.id)}
+                            style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
                           >
                             Delete
                           </button>
                         </div>
 
-                        <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap" }}>
-                          {l.weightKg ? (
+                        <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", color: "rgba(17,17,17,0.72)", fontWeight: 800 }}>
+                          {h.weightKg ? (
                             <div>
-                              ⚖️ <b>{l.weightKg}kg</b>
+                              ⚖️ <b style={{ color: UI.ink }}>{h.weightKg}kg</b>
                             </div>
                           ) : null}
-                          {l.bpSys && l.bpDia ? (
+                          {h.restingHr ? (
                             <div>
-                              🩺 <b>{l.bpSys}/{l.bpDia}</b>
+                              ❤️ <b style={{ color: UI.ink }}>{h.restingHr} bpm</b>
                             </div>
                           ) : null}
-                          {l.restingHr ? (
+                          {h.bpSys && h.bpDia ? (
                             <div>
-                              ❤️ <b>{l.restingHr} bpm</b>
+                              🩺 <b style={{ color: UI.ink }}>{h.bpSys}/{h.bpDia}</b>
                             </div>
                           ) : null}
-                          {l.waistCm ? (
+                          {h.exerciseMinutes ? (
                             <div>
-                              📏 Waist <b>{l.waistCm}cm</b>
-                            </div>
-                          ) : null}
-                          {l.hipsCm ? (
-                            <div>
-                              📏 Hips <b>{l.hipsCm}cm</b>
-                            </div>
-                          ) : null}
-                          {l.chestCm ? (
-                            <div>
-                              📏 Chest <b>{l.chestCm}cm</b>
-                            </div>
-                          ) : null}
-                          {l.exerciseType ? (
-                            <div>
-                              🏃 <b>{l.exerciseType}</b>
-                              {l.exerciseMins ? ` • ${l.exerciseMins} min` : ""}
-                              {l.exerciseIntensity ? ` • ${l.exerciseIntensity}` : ""}
+                              🏃 <b style={{ color: UI.ink }}>{h.exerciseMinutes} min</b>
                             </div>
                           ) : null}
                         </div>
 
-                        {l.notes ? <div style={{ marginTop: 8, color: "#333" }}>{l.notes}</div> : null}
+                        {h.notes ? <div style={{ marginTop: 8, color: "rgba(17,17,17,0.78)" }}>{h.notes}</div> : null}
                       </div>
                     ))}
                   </div>
                 )}
               </div>
             </div>
-          </GlassOverlay>
+          </div>
         )}
       </AppPage>
     </AppShell>
