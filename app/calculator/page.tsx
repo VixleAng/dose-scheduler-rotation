@@ -34,7 +34,13 @@ function useIsMobile(maxPx = 720) {
   return isMobile;
 }
 
-function SyringeRuler({
+/**
+ * Premium syringe visual:
+ * - tick marks + labels are INSIDE the barrel
+ * - fill shows "how far to draw"
+ * - draw-to line + little label pill
+ */
+function SyringeVisual({
   units,
   maxUnits,
 }: {
@@ -44,14 +50,17 @@ function SyringeRuler({
   const u = clamp(Number.isFinite(units) ? units : 0, 0, maxUnits);
   const pct = maxUnits <= 0 ? 0 : u / maxUnits;
 
-  // ticks: show minor=1, medium=5, major=10
-  // for performance on mobile, render ticks using simple loop, but keep it lightweight
+  // Render major labels: 0, 10, 20... up to maxUnits
+  const majorStep = 10;
+  const minorStep = 1;
+  const mediumStep = 5;
+
   const ticks = useMemo(() => {
-    const arr: Array<{ v: number; isMajor: boolean; isMedium: boolean }> = [];
-    for (let v = 0; v <= maxUnits; v += 1) {
-      const isMajor = v % 10 === 0;
-      const isMedium = !isMajor && v % 5 === 0;
-      arr.push({ v, isMajor, isMedium });
+    const arr: Array<{ v: number; kind: "major" | "medium" | "minor" }> = [];
+    for (let v = 0; v <= maxUnits; v += minorStep) {
+      const kind =
+        v % majorStep === 0 ? "major" : v % mediumStep === 0 ? "medium" : "minor";
+      arr.push({ v, kind });
     }
     return arr;
   }, [maxUnits]);
@@ -66,7 +75,6 @@ function SyringeRuler({
         boxShadow: UI.shadow,
       }}
     >
-      {/* Header row (keep it minimal) */}
       <div
         style={{
           display: "flex",
@@ -76,13 +84,12 @@ function SyringeRuler({
           flexWrap: "wrap",
         }}
       >
-        <div style={{ fontWeight: 950, color: UI.ink }}>Visual syringe (with tick marks)</div>
+        <div style={{ fontWeight: 950, color: UI.ink }}>Visual syringe</div>
         <div style={{ color: UI.muted, fontWeight: 900, fontSize: 12 }}>
-          Selected: {maxUnits} unit syringe
+          {maxUnits}U syringe • Draw to <b>{fmt(u, 0)}U</b>
         </div>
       </div>
 
-      {/* Syringe block */}
       <div
         style={{
           marginTop: 12,
@@ -90,81 +97,23 @@ function SyringeRuler({
           border: `1px solid ${UI.line}`,
           background: "#fff",
           padding: 14,
+          overflow: "hidden",
         }}
       >
-        {/* Tick ruler */}
-        <div style={{ position: "relative", height: 46, userSelect: "none" }}>
-          {/* baseline */}
-          <div
-            style={{
-              position: "absolute",
-              left: 6,
-              right: 6,
-              top: 28,
-              height: 2,
-              background: "rgba(17,17,17,0.10)",
-              borderRadius: 999,
-            }}
-          />
-
-          {ticks.map((t) => {
-            const xPct = (t.v / maxUnits) * 100;
-            const height = t.isMajor ? 24 : t.isMedium ? 16 : 10;
-            const top = 28 - height;
-
-            return (
-              <div key={t.v}>
-                <div
-                  style={{
-                    position: "absolute",
-                    left: `calc(${xPct}% + 6px)`,
-                    transform: "translateX(-1px)",
-                    top,
-                    width: 2,
-                    height,
-                    background: t.isMajor
-                      ? "rgba(17,17,17,0.65)"
-                      : t.isMedium
-                      ? "rgba(17,17,17,0.38)"
-                      : "rgba(17,17,17,0.18)",
-                    borderRadius: 2,
-                  }}
-                />
-                {t.isMajor && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: `calc(${xPct}% + 6px)`,
-                      transform: "translateX(-50%)",
-                      top: 0,
-                      fontSize: 12,
-                      fontWeight: 950,
-                      color: "rgba(17,17,17,0.70)",
-                    }}
-                  >
-                    {t.v}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Barrel row */}
+        {/* Syringe body */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "44px 1fr 26px",
+            gridTemplateColumns: "48px 1fr 34px",
             gap: 10,
             alignItems: "center",
-            marginTop: 10,
           }}
         >
           {/* Plunger */}
           <div
             style={{
-              height: 40,
-              borderRadius: 14,
+              height: 54,
+              borderRadius: 16,
               border: `1px solid ${UI.line}`,
               background: "rgba(255,106,61,0.16)",
               display: "flex",
@@ -172,17 +121,18 @@ function SyringeRuler({
               justifyContent: "center",
               fontWeight: 950,
               color: UI.ink,
+              userSelect: "none",
             }}
             title="Plunger"
           >
             ||
           </div>
 
-          {/* Barrel (fill INSIDE the barrel) */}
+          {/* Barrel */}
           <div
             style={{
               position: "relative",
-              height: 40,
+              height: 54,
               borderRadius: 18,
               border: `1px solid ${UI.line}`,
               background: "linear-gradient(180deg,#ffffff 0%, #fafafa 100%)",
@@ -190,46 +140,130 @@ function SyringeRuler({
             }}
             title="Syringe barrel"
           >
-            {/* Fill */}
+            {/* Inner “glass” inset */}
             <div
               style={{
                 position: "absolute",
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: `${pct * 100}%`,
-                background:
-                  "linear-gradient(180deg, rgba(255, 106, 61, 0.22) 0%, rgba(255, 106, 61, 0.52) 100%)",
+                inset: 8,
+                borderRadius: 14,
+                border: "1px solid rgba(17,17,17,0.08)",
+                background: "rgba(255,255,255,0.65)",
+                overflow: "hidden",
               }}
-            />
-            {/* Cursor line */}
-            <div
-              style={{
-                position: "absolute",
-                left: `${pct * 100}%`,
-                top: 0,
-                bottom: 0,
-                width: 2,
-                background: UI.accent,
-                opacity: 0.95,
-              }}
-            />
-            {/* Gloss */}
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.70) 0%, rgba(255,255,255,0) 62%)",
-                pointerEvents: "none",
-              }}
-            />
+            >
+              {/* Fill (inside inset) */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: `${pct * 100}%`,
+                  background:
+                    "linear-gradient(180deg, rgba(255, 106, 61, 0.18) 0%, rgba(255, 106, 61, 0.55) 100%)",
+                }}
+              />
+
+              {/* Tick marks + labels INSIDE */}
+              <div style={{ position: "absolute", inset: 0 }}>
+                {ticks.map((t) => {
+                  const xPct = (t.v / maxUnits) * 100;
+
+                  const h =
+                    t.kind === "major" ? 22 : t.kind === "medium" ? 16 : 10;
+
+                  const lineOpacity =
+                    t.kind === "major" ? 0.55 : t.kind === "medium" ? 0.35 : 0.18;
+
+                  return (
+                    <div key={t.v}>
+                      {/* Tick */}
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: `${xPct}%`,
+                          transform: "translateX(-1px)",
+                          bottom: 0,
+                          width: 2,
+                          height: h,
+                          background: `rgba(17,17,17,${lineOpacity})`,
+                          borderRadius: 2,
+                        }}
+                      />
+
+                      {/* Major label */}
+                      {t.kind === "major" && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: `${xPct}%`,
+                            transform: "translateX(-50%)",
+                            top: 6,
+                            fontSize: 11,
+                            fontWeight: 950,
+                            color: "rgba(17,17,17,0.55)",
+                            userSelect: "none",
+                          }}
+                        >
+                          {t.v}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Draw-to cursor line */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${pct * 100}%`,
+                  top: 0,
+                  bottom: 0,
+                  width: 2,
+                  background: UI.accent,
+                  opacity: 0.95,
+                }}
+              />
+
+              {/* Draw-to label pill */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${pct * 100}%`,
+                  transform: "translateX(-50%)",
+                  top: -10,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(17,17,17,0.10)",
+                  background: "rgba(17,17,17,0.92)",
+                  color: "#fff",
+                  fontWeight: 950,
+                  fontSize: 12,
+                  boxShadow: "0 10px 24px rgba(0,0,0,0.15)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {fmt(u, 0)}U
+              </div>
+
+              {/* Gloss */}
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0) 70%)",
+                  pointerEvents: "none",
+                }}
+              />
+            </div>
           </div>
 
-          {/* Needle tip (tiny) */}
+          {/* Needle */}
           <div
             style={{
-              height: 2,
+              height: 3,
               background: "rgba(17,17,17,0.55)",
               borderRadius: 999,
             }}
@@ -237,62 +271,33 @@ function SyringeRuler({
           />
         </div>
 
-        {/* Footer row */}
+        {/* Footer helper */}
         <div
           style={{
             marginTop: 10,
             display: "flex",
             justifyContent: "space-between",
             gap: 10,
-            color: "rgba(17,17,17,0.65)",
+            color: "rgba(17,17,17,0.55)",
             fontWeight: 900,
             fontSize: 12,
           }}
         >
-          <div>0 units</div>
-          <div>{maxUnits} units</div>
+          <div>0U</div>
+          <div>{maxUnits}U</div>
         </div>
 
         <div
           style={{
             marginTop: 10,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
+            textAlign: "center",
+            color: "rgba(17,17,17,0.45)",
+            fontWeight: 900,
+            fontSize: 12,
           }}
         >
-          <div style={{ color: UI.muted, fontWeight: 900, fontSize: 12 }}>
-            Minor: 1 • Medium: 5 • Major: 10 • U-100: 100 units = 1.00 mL
-          </div>
-
-          <div
-            style={{
-              padding: "9px 12px",
-              borderRadius: 999,
-              border: `1px solid ${UI.line}`,
-              background: UI.ink,
-              color: "#fff",
-              fontWeight: 950,
-              fontSize: 12,
-            }}
-          >
-            Draw to: {fmt(u, 0)} units
-          </div>
+          U-100 reference: 100 units = 1.00 mL • For reference only, no medical advice.
         </div>
-      </div>
-
-      <div
-        style={{
-          marginTop: 10,
-          textAlign: "center",
-          color: "rgba(17,17,17,0.45)",
-          fontWeight: 900,
-          fontSize: 12,
-        }}
-      >
-        Dose Converter is a unit-conversion and reference tool. No medical advice.
       </div>
     </section>
   );
@@ -301,17 +306,14 @@ function SyringeRuler({
 export default function CalculatorPage() {
   const isMobile = useIsMobile(720);
 
-  // Only syringe sizes you want: 50U and 100U
   const [maxUnits, setMaxUnits] = useState<SyringeUnits>(100);
 
-  // Reconstitution inputs
   const [vialMg, setVialMg] = useState<string>("10");
   const [waterMl, setWaterMl] = useState<string>("2");
   const [doseMg, setDoseMg] = useState<string>("2.5");
 
   const pad = isMobile ? 12 : 14;
 
-  // Calculations
   const recon = useMemo(() => {
     const mg = toNum(vialMg);
     const ml = toNum(waterMl);
@@ -331,11 +333,11 @@ export default function CalculatorPage() {
     return { ok: true as const, concentration, mlNeeded, units };
   }, [vialMg, waterMl, doseMg]);
 
-  const unitsClamped = clamp(
-    Number.isFinite(recon.ok ? recon.units : NaN) ? (recon as any).units : 0,
-    0,
-    maxUnits
-  );
+  const unitsRaw = Number.isFinite(recon.ok ? (recon as any).units : NaN)
+    ? (recon as any).units
+    : 0;
+
+  const unitsClamped = clamp(unitsRaw, 0, maxUnits);
 
   const card: React.CSSProperties = {
     border: `1px solid ${UI.line}`,
@@ -391,30 +393,16 @@ export default function CalculatorPage() {
   return (
     <AppShell title="Calculator" subtitle="Reconstitution math + syringe units (U-100).">
       <AppPage>
-        {/* Mobile/contrast polish + try to un-grey the Menu button */}
-        <style jsx global>{`
-          /* Make text/buttons feel less washed out on mobile */
-          @media (max-width: 720px) {
-            body {
-              -webkit-text-size-adjust: 100%;
-            }
-          }
-
-          /* Try to fix “Menu” looking disabled (covers common patterns) */
-          button[aria-label="Menu"],
-          button[aria-label="menu"],
-          button:has(> span:contains("Menu")),
-          .menuBtn,
-          .appMenuBtn,
-          .appShellMenuBtn {
-            opacity: 1 !important;
-            filter: none !important;
-          }
-        `}</style>
-
-        {/* Top: syringe size selection (replaces “Reconstitution” weirdness) */}
-        <section style={{ ...card, marginTop: 12, background: "linear-gradient(180deg,#fff 0%, #fff7f3 100%)" }}>
-          <div style={{ fontWeight: 950, color: UI.ink, fontSize: 16 }}>Select a Syringe Size</div>
+        <section
+          style={{
+            ...card,
+            marginTop: 12,
+            background: "linear-gradient(180deg,#fff 0%, #fff7f3 100%)",
+          }}
+        >
+          <div style={{ fontWeight: 950, color: UI.ink, fontSize: 16 }}>
+            Select a Syringe Size
+          </div>
 
           <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => setMaxUnits(50)} style={sizePill(maxUnits === 50)}>
@@ -430,7 +418,6 @@ export default function CalculatorPage() {
           </div>
         </section>
 
-        {/* Inputs: Vial + BAC side-by-side (boxed), dose below */}
         <section style={{ ...card, marginTop: 12 }}>
           <div style={{ fontWeight: 950, fontSize: 16, color: UI.ink }}>Reconstitution</div>
           <div style={{ color: UI.muted, fontWeight: 900, marginTop: 6 }}>
@@ -445,7 +432,6 @@ export default function CalculatorPage() {
               gap: 12,
             }}
           >
-            {/* Vial box */}
             <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
               <div style={label}>Vial amount (mg)</div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -467,7 +453,6 @@ export default function CalculatorPage() {
               </div>
             </div>
 
-            {/* BAC box */}
             <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
               <div style={label}>BAC water (mL)</div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -490,7 +475,6 @@ export default function CalculatorPage() {
             </div>
           </div>
 
-          {/* Dose */}
           <div style={{ marginTop: 12 }}>
             <div style={label}>Dose (mg)</div>
             <input
@@ -502,7 +486,6 @@ export default function CalculatorPage() {
             />
           </div>
 
-          {/* Results (simple lines, premium + compact) */}
           <div style={{ marginTop: 12, borderTop: `1px solid ${UI.line}`, paddingTop: 12 }}>
             {!recon.ok ? (
               <div style={{ fontWeight: 950, color: UI.muted }}>
@@ -519,14 +502,16 @@ export default function CalculatorPage() {
                 <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
                   <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Concentration</div>
                   <div style={{ fontWeight: 950, color: UI.ink, fontSize: 18 }}>
-                    {fmt((recon as any).concentration, 3)} <span style={{ fontSize: 14, color: UI.muted }}>mg/mL</span>
+                    {fmt((recon as any).concentration, 3)}{" "}
+                    <span style={{ fontSize: 14, color: UI.muted }}>mg/mL</span>
                   </div>
                 </div>
 
                 <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
                   <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Volume</div>
                   <div style={{ fontWeight: 950, color: UI.ink, fontSize: 18 }}>
-                    {fmt((recon as any).mlNeeded, 3)} <span style={{ fontSize: 14, color: UI.muted }}>mL</span>
+                    {fmt((recon as any).mlNeeded, 3)}{" "}
+                    <span style={{ fontSize: 14, color: UI.muted }}>mL</span>
                   </div>
                 </div>
 
@@ -542,15 +527,22 @@ export default function CalculatorPage() {
               </div>
             )}
 
-            <div style={{ marginTop: 12, color: "rgba(17,17,17,0.60)", fontWeight: 900, fontSize: 12, lineHeight: 1.4 }}>
+            <div
+              style={{
+                marginTop: 12,
+                color: "rgba(17,17,17,0.60)",
+                fontWeight: 900,
+                fontSize: 12,
+                lineHeight: 1.4,
+              }}
+            >
               For general informational use only. Double-check calculations and follow professional medical guidance.
             </div>
           </div>
         </section>
 
-        {/* Syringe guide: ONE ruler only, full-width, sits at the bottom on desktop and mobile */}
         <div style={{ marginTop: 12 }}>
-          <SyringeRuler units={unitsClamped} maxUnits={maxUnits} />
+          <SyringeVisual units={unitsClamped} maxUnits={maxUnits} />
         </div>
       </AppPage>
     </AppShell>
