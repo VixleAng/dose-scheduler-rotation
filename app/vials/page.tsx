@@ -55,12 +55,10 @@ function todayISO() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// (still used in low-stock heuristic)
-function injectionsPerWeek(freq: Frequency) {
-  if (freq === "daily") return 7;
-  if (freq === "weekly") return 1;
-  if (freq === "twice_weekly") return 2;
-  return 3;
+// ✅ Safe frequency label (prevents Vercel crash if old data has missing frequency)
+function freqLabel(freq: any): string {
+  const s = typeof freq === "string" ? freq : "";
+  return s ? s.split("_").join(" ") : "—";
 }
 
 const LS_VIALS = "dosecomp_vials_v1";
@@ -98,7 +96,7 @@ function migrateRoutinesToV4() {
 }
 
 /* -------------------------
-   ✅ #2: schedule-accurate run-out helpers
+   Schedule-accurate run-out helpers
 -------------------------- */
 
 function isoDateOnly(d: Date) {
@@ -118,13 +116,6 @@ function addDays(d: Date, days: number) {
   return x;
 }
 
-/**
- * Default schedule patterns (premium-feel accurate).
- * - weekly: same weekday as startDate (or today if missing)
- * - twice_weekly: Mon + Thu
- * - three_times_weekly: Mon + Wed + Fri
- * - daily: every day
- */
 function getDefaultWeekdays(freq: Frequency, anchor: Date) {
   const anchorDow = anchor.getDay(); // 0=Sun..6=Sat
   if (freq === "daily") return [0, 1, 2, 3, 4, 5, 6];
@@ -196,7 +187,13 @@ export default function VialsPage() {
       const rrArr = safeParseArray<Routine>(rr);
 
       if (vv) setVials(vv);
-      if (rrArr) setRoutines(rrArr);
+
+      // ✅ extra safety: filter out any routines missing core fields
+      if (rrArr) {
+        const clean = rrArr.filter((r: any) => r && typeof r.id === "string" && typeof r.name === "string");
+        setRoutines(clean as Routine[]);
+        setRoutineId((clean as any[])[0]?.id ?? "");
+      }
     } catch {
       // ignore
     }
@@ -221,7 +218,7 @@ export default function VialsPage() {
   const lowStock = useMemo(() => {
     return activeVials.some((v) => {
       const r = routines.find((x) => x.id === v.routineId);
-      const dose = r?.doseMg;
+      const dose = (r as any)?.doseMg;
       if (!dose || dose <= 0) return false;
       const rem = Math.max(0, v.vialMg - v.usedMg);
       const injLeft = rem / dose;
@@ -365,11 +362,10 @@ export default function VialsPage() {
     fontSize: 16,
   };
 
-  // ✅ UPDATED: schedule-accurate derived stats
   function vialDerived(v: Vial) {
     const concentration = v.vialMg / v.bacMl; // mg/mL
     const r = routines.find((x) => x.id === v.routineId);
-    const dose = r?.doseMg;
+    const dose = (r as any)?.doseMg;
     const remMg = Math.max(0, v.vialMg - v.usedMg);
 
     let shotsLeftExact = NaN;
@@ -378,12 +374,12 @@ export default function VialsPage() {
     let nextDoseISO: string | null = null;
     let runOutISO: string | null = null;
 
-    if (dose && dose > 0 && r) {
+    if (dose && dose > 0 && r && (r as any).frequency) {
       shotsLeftExact = remMg / dose;
       fullShotsLeft = Math.floor(shotsLeftExact + 1e-9);
 
-      nextDoseISO = calcNextDoseDate(r);
-      runOutISO = calcRunOutDate(r, Number.isFinite(fullShotsLeft) ? fullShotsLeft : 0);
+      nextDoseISO = calcNextDoseDate(r as Routine);
+      runOutISO = calcRunOutDate(r as Routine, Number.isFinite(fullShotsLeft) ? fullShotsLeft : 0);
     }
 
     return { concentration, r, dose, remMg, shotsLeftExact, fullShotsLeft, nextDoseISO, runOutISO };
@@ -483,9 +479,9 @@ export default function VialsPage() {
                           <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
                             {d.r ? (
                               <>
-                                <div style={{ fontWeight: 950, color: UI.ink }}>{d.r.name}</div>
+                                <div style={{ fontWeight: 950, color: UI.ink }}>{(d.r as any).name ?? "Routine"}</div>
                                 <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
-                                  {fmt(d.r.doseMg, 2)} mg • {d.r.frequency.replaceAll("_", " ")}
+                                  {fmt((d.r as any).doseMg ?? NaN, 2)} mg • {freqLabel((d.r as any).frequency)}
                                 </div>
                               </>
                             ) : (
@@ -522,9 +518,7 @@ export default function VialsPage() {
                           <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
                             {Number.isFinite(d.fullShotsLeft) ? (
                               <>
-                                <div style={{ fontWeight: 950, color: isLow ? UI.accent : UI.ink }}>
-                                  {d.fullShotsLeft} shots
-                                </div>
+                                <div style={{ fontWeight: 950, color: isLow ? UI.accent : UI.ink }}>{d.fullShotsLeft} shots</div>
                                 <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
                                   Next dose: {d.nextDoseISO ?? "—"} • Run-out: {d.runOutISO ?? "—"}
                                 </div>
@@ -623,7 +617,6 @@ export default function VialsPage() {
                     cursor: "pointer",
                     fontWeight: 950,
                     boxShadow: "0 10px 22px rgba(0,0,0,0.10)",
-                    opacity: 1,
                   }}
                 >
                   Close
@@ -641,9 +634,9 @@ export default function VialsPage() {
                     <div style={{ fontWeight: 950, color: "rgba(17,17,17,0.72)", marginBottom: 8 }}>Link to routine (optional)</div>
                     <select value={routineId} onChange={(e) => setRoutineId(e.target.value)} style={input}>
                       <option value="">Not linked</option>
-                      {routines.map((r) => (
+                      {routines.map((r: any) => (
                         <option key={r.id} value={r.id}>
-                          {r.name} • {fmt(r.doseMg, 2)}mg • {r.frequency.replaceAll("_", " ")}
+                          {r.name} • {fmt(r.doseMg ?? NaN, 2)}mg • {freqLabel(r.frequency)}
                         </option>
                       ))}
                     </select>
