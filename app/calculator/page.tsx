@@ -22,6 +22,13 @@ function fmt(n: number, dp = 2) {
   return fixed.replace(/\.?0+$/, "");
 }
 
+function fmtUnits(n: number) {
+  if (!Number.isFinite(n)) return "—";
+  // show .5 / decimals when needed, otherwise integer
+  const isInt = Math.abs(n - Math.round(n)) < 1e-9;
+  return isInt ? fmt(n, 0) : fmt(n, 1);
+}
+
 function useIsMobile(maxPx = 720) {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -36,21 +43,25 @@ function useIsMobile(maxPx = 720) {
 
 /**
  * Premium syringe visual:
- * - tick marks + labels are INSIDE the barrel
+ * - tick marks + labels INSIDE the barrel
  * - fill shows "how far to draw"
- * - draw-to line + little label pill
+ * - draw-to line + label pill
+ *
+ * NOTE: We pass in the "draw-to" units already (can be clamped),
+ * and we can optionally show a small "raw units" hint above.
  */
 function SyringeVisual({
   units,
   maxUnits,
+  rawUnits,
 }: {
-  units: number;
+  units: number; // draw-to (may be clamped)
   maxUnits: SyringeUnits;
+  rawUnits?: number; // true units (unclamped)
 }) {
   const u = clamp(Number.isFinite(units) ? units : 0, 0, maxUnits);
   const pct = maxUnits <= 0 ? 0 : u / maxUnits;
 
-  // Render major labels: 0, 10, 20... up to maxUnits
   const majorStep = 10;
   const minorStep = 1;
   const mediumStep = 5;
@@ -58,8 +69,7 @@ function SyringeVisual({
   const ticks = useMemo(() => {
     const arr: Array<{ v: number; kind: "major" | "medium" | "minor" }> = [];
     for (let v = 0; v <= maxUnits; v += minorStep) {
-      const kind =
-        v % majorStep === 0 ? "major" : v % mediumStep === 0 ? "medium" : "minor";
+      const kind = v % majorStep === 0 ? "major" : v % mediumStep === 0 ? "medium" : "minor";
       arr.push({ v, kind });
     }
     return arr;
@@ -85,8 +95,14 @@ function SyringeVisual({
         }}
       >
         <div style={{ fontWeight: 950, color: UI.ink }}>Visual syringe</div>
+
         <div style={{ color: UI.muted, fontWeight: 900, fontSize: 12 }}>
-          {maxUnits}U syringe • Draw to <b>{fmt(u, 0)}U</b>
+          {maxUnits}U syringe • Draw to <b>{fmtUnits(u)}U</b>
+          {Number.isFinite(rawUnits ?? NaN) ? (
+            <span style={{ marginLeft: 8 }}>
+              • True: <b>{fmtUnits(rawUnits!)}U</b>
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -100,7 +116,6 @@ function SyringeVisual({
           overflow: "hidden",
         }}
       >
-        {/* Syringe body */}
         <div
           style={{
             display: "grid",
@@ -140,7 +155,7 @@ function SyringeVisual({
             }}
             title="Syringe barrel"
           >
-            {/* Inner “glass” inset */}
+            {/* Inner inset */}
             <div
               style={{
                 position: "absolute",
@@ -151,7 +166,7 @@ function SyringeVisual({
                 overflow: "hidden",
               }}
             >
-              {/* Fill (inside inset) */}
+              {/* Fill */}
               <div
                 style={{
                   position: "absolute",
@@ -164,20 +179,15 @@ function SyringeVisual({
                 }}
               />
 
-              {/* Tick marks + labels INSIDE */}
+              {/* Ticks + labels INSIDE */}
               <div style={{ position: "absolute", inset: 0 }}>
                 {ticks.map((t) => {
                   const xPct = (t.v / maxUnits) * 100;
-
-                  const h =
-                    t.kind === "major" ? 22 : t.kind === "medium" ? 16 : 10;
-
-                  const lineOpacity =
-                    t.kind === "major" ? 0.55 : t.kind === "medium" ? 0.35 : 0.18;
+                  const h = t.kind === "major" ? 22 : t.kind === "medium" ? 16 : 10;
+                  const lineOpacity = t.kind === "major" ? 0.55 : t.kind === "medium" ? 0.35 : 0.18;
 
                   return (
                     <div key={t.v}>
-                      {/* Tick */}
                       <div
                         style={{
                           position: "absolute",
@@ -190,8 +200,6 @@ function SyringeVisual({
                           borderRadius: 2,
                         }}
                       />
-
-                      {/* Major label */}
                       {t.kind === "major" && (
                         <div
                           style={{
@@ -213,7 +221,7 @@ function SyringeVisual({
                 })}
               </div>
 
-              {/* Draw-to cursor line */}
+              {/* Draw-to cursor */}
               <div
                 style={{
                   position: "absolute",
@@ -226,7 +234,7 @@ function SyringeVisual({
                 }}
               />
 
-              {/* Draw-to label pill */}
+              {/* Draw-to label */}
               <div
                 style={{
                   position: "absolute",
@@ -244,7 +252,7 @@ function SyringeVisual({
                   whiteSpace: "nowrap",
                 }}
               >
-                {fmt(u, 0)}U
+                {fmtUnits(u)}U
               </div>
 
               {/* Gloss */}
@@ -252,8 +260,7 @@ function SyringeVisual({
                 style={{
                   position: "absolute",
                   inset: 0,
-                  background:
-                    "linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0) 70%)",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0) 70%)",
                   pointerEvents: "none",
                 }}
               />
@@ -271,7 +278,6 @@ function SyringeVisual({
           />
         </div>
 
-        {/* Footer helper */}
         <div
           style={{
             marginTop: 10,
@@ -325,19 +331,17 @@ export default function CalculatorPage() {
 
     const concentration = mg / ml; // mg per mL
     if (!Number.isFinite(dose) || dose <= 0) {
-      return { ok: true as const, concentration, mlNeeded: NaN, units: NaN };
+      return { ok: true as const, concentration, mlNeeded: NaN, unitsRaw: NaN };
     }
 
     const mlNeeded = dose / concentration;
-    const units = mlNeeded * 100; // U-100 scale
-    return { ok: true as const, concentration, mlNeeded, units };
+    const unitsRaw = mlNeeded * 100; // U-100 scale
+    return { ok: true as const, concentration, mlNeeded, unitsRaw };
   }, [vialMg, waterMl, doseMg]);
 
-  const unitsRaw = Number.isFinite(recon.ok ? (recon as any).units : NaN)
-    ? (recon as any).units
-    : 0;
-
-  const unitsClamped = clamp(unitsRaw, 0, maxUnits);
+  const unitsRaw = recon.ok ? recon.unitsRaw : NaN;
+  const unitsClamped = Number.isFinite(unitsRaw) ? clamp(unitsRaw, 0, maxUnits) : 0;
+  const overMax = Number.isFinite(unitsRaw) && unitsRaw > maxUnits;
 
   const card: React.CSSProperties = {
     border: `1px solid ${UI.line}`,
@@ -400,9 +404,7 @@ export default function CalculatorPage() {
             background: "linear-gradient(180deg,#fff 0%, #fff7f3 100%)",
           }}
         >
-          <div style={{ fontWeight: 950, color: UI.ink, fontSize: 16 }}>
-            Select a Syringe Size
-          </div>
+          <div style={{ fontWeight: 950, color: UI.ink, fontSize: 16 }}>Select a Syringe Size</div>
 
           <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => setMaxUnits(50)} style={sizePill(maxUnits === 50)}>
@@ -488,43 +490,66 @@ export default function CalculatorPage() {
 
           <div style={{ marginTop: 12, borderTop: `1px solid ${UI.line}`, paddingTop: 12 }}>
             {!recon.ok ? (
-              <div style={{ fontWeight: 950, color: UI.muted }}>
-                Enter a valid vial mg and water mL to calculate.
-              </div>
+              <div style={{ fontWeight: 950, color: UI.muted }}>Enter a valid vial mg and water mL to calculate.</div>
             ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
-                  gap: 10,
-                }}
-              >
-                <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
-                  <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Concentration</div>
-                  <div style={{ fontWeight: 950, color: UI.ink, fontSize: 18 }}>
-                    {fmt((recon as any).concentration, 3)}{" "}
-                    <span style={{ fontSize: 14, color: UI.muted }}>mg/mL</span>
+              <>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
+                    <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Concentration</div>
+                    <div style={{ fontWeight: 950, color: UI.ink, fontSize: 18 }}>
+                      {fmt(recon.concentration, 3)} <span style={{ fontSize: 14, color: UI.muted }}>mg/mL</span>
+                    </div>
+                  </div>
+
+                  <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
+                    <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Volume</div>
+                    <div style={{ fontWeight: 950, color: UI.ink, fontSize: 18 }}>
+                      {fmt(recon.mlNeeded, 3)} <span style={{ fontSize: 14, color: UI.muted }}>mL</span>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      border: `1px solid ${UI.line}`,
+                      borderRadius: 16,
+                      padding: 12,
+                      background: overMax ? "rgba(220, 38, 38, 0.08)" : "#fff7f3",
+                    }}
+                  >
+                    <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Units (U-100)</div>
+                    <div style={{ fontWeight: 980, color: UI.ink, fontSize: 18 }}>
+                      True: {fmtUnits(unitsRaw)}U
+                      <div style={{ marginTop: 4, fontSize: 13, fontWeight: 950, color: UI.muted }}>
+                        Draw to: {fmtUnits(unitsClamped)}U {overMax ? `(max ${maxUnits}U)` : ""}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
-                  <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Volume</div>
-                  <div style={{ fontWeight: 950, color: UI.ink, fontSize: 18 }}>
-                    {fmt((recon as any).mlNeeded, 3)}{" "}
-                    <span style={{ fontSize: 14, color: UI.muted }}>mL</span>
+                {overMax ? (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      border: "1px solid rgba(220, 38, 38, 0.18)",
+                      background: "rgba(220, 38, 38, 0.06)",
+                      borderRadius: 16,
+                      padding: 12,
+                      color: "rgba(127, 29, 29, 0.92)",
+                      fontWeight: 900,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    This dose needs <b>{fmtUnits(unitsRaw)}U</b>, which is bigger than a <b>{maxUnits}U</b> syringe.
+                    Use a larger syringe size, or split into multiple draws if appropriate.
                   </div>
-                </div>
-
-                <div style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff7f3" }}>
-                  <div style={{ color: UI.muted, fontWeight: 950, fontSize: 12 }}>Units (U-100)</div>
-                  <div style={{ fontWeight: 980, color: UI.ink, fontSize: 18 }}>
-                    {fmt(unitsClamped, 0)}{" "}
-                    <span style={{ fontSize: 12, color: UI.muted, fontWeight: 950 }}>
-                      (clamped to {maxUnits}U syringe)
-                    </span>
-                  </div>
-                </div>
-              </div>
+                ) : null}
+              </>
             )}
 
             <div
@@ -542,7 +567,7 @@ export default function CalculatorPage() {
         </section>
 
         <div style={{ marginTop: 12 }}>
-          <SyringeVisual units={unitsClamped} maxUnits={maxUnits} />
+          <SyringeVisual units={unitsClamped} rawUnits={unitsRaw} maxUnits={maxUnits} />
         </div>
       </AppPage>
     </AppShell>

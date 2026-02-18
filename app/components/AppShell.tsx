@@ -4,34 +4,51 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/** Shared UI palette */
+/**
+ * HelixX UI
+ * - Background + sidebar = dark glass
+ * - Content surfaces (cards/inputs) = light "dashboard" tone
+ */
 export const UI = {
-  bg: "#fbfaf8",
-  card: "#ffffff",
-  line: "rgba(17,17,17,0.12)",
+  // Text for LIGHT surfaces (cards)
+  ink: "rgba(17,17,17,0.92)",
   muted: "rgba(17,17,17,0.62)",
-  ink: "#111111",
-  accent: "#ff6a3d",
-  accentSoft: "rgba(255,106,61,0.12)",
-  shadow: "0 16px 40px rgba(0,0,0,0.08)",
+  line: "rgba(17,17,17,0.12)",
+
+  // Text for DARK surfaces (sidebar/background)
+  inkOnDark: "rgba(255,255,255,0.92)",
+  mutedOnDark: "rgba(255,255,255,0.62)",
+  lineOnDark: "rgba(255,255,255,0.10)",
+
+  // Brand
+  accent: "#E10600",
+  accentGlow: "rgba(225,6,0,0.18)",
+  accentSoft: "rgba(225,6,0,0.10)",
+  accentLine: "rgba(225,6,0,0.55)",
+
+  // App background
+  bg: "#0B0B0D",
+
+  // Light surfaces (content)
+  card: "rgba(255,255,255,0.92)",
+  cardSolid: "#FFFFFF",
+
+  // Dark surfaces (sidebar)
+  sideCard: "linear-gradient(180deg, rgba(21,21,24,0.76) 0%, rgba(21,21,24,0.62) 100%)",
+
+  // Shadows
+  shadow: "0 22px 70px rgba(0,0,0,0.60)",
+  shadowSoft: "0 12px 28px rgba(0,0,0,0.35)",
 };
 
-export function AppPage({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ padding: 18 }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>{children}</div>
-    </div>
-  );
-}
-
 export function GlassOverlay({
-  children,
   onClose,
   align = "center",
+  children,
 }: {
-  children: React.ReactNode;
   onClose: () => void;
   align?: "center" | "bottom";
+  children: React.ReactNode;
 }) {
   return (
     <div
@@ -39,12 +56,14 @@ export function GlassOverlay({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.45)",
-        zIndex: 80,
+        zIndex: 50,
+        background: "rgba(0,0,0,0.55)",
+        backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
         display: "flex",
-        justifyContent: "center",
         alignItems: align === "bottom" ? "flex-end" : "center",
-        padding: 10,
+        justifyContent: "center",
+        padding: 14,
       }}
     >
       {children}
@@ -52,217 +71,227 @@ export function GlassOverlay({
   );
 }
 
-function useIsMobile(maxPx = 860) {
+export function AppPage({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      {children}
+    </div>
+  );
+}
+
+function useIsMobile(breakpoint = 980) {
   const [isMobile, setIsMobile] = useState(false);
-
   useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${maxPx}px)`);
-    const onChange = () => setIsMobile(mq.matches);
-    onChange();
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-  }, [maxPx]);
-
+    const check = () => setIsMobile(window.innerWidth <= breakpoint);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [breakpoint]);
   return isMobile;
 }
 
-type NavItem = {
-  href: string;
-  label: string;
-  section?: "main" | "tools";
-};
+function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const pathname = usePathname();
+
+  const nav = useMemo(
+    () => [
+      { href: "/dashboard", label: "Dashboard" },
+      { href: "/health", label: "Health Log" },
+      { href: "/tracker", label: "Tracker" },
+      { href: "/vials", label: "Stock Manager" },
+      { href: "/calculator", label: "Calculator" },
+    ],
+    []
+  );
+
+  return (
+    <aside
+      style={{
+        borderRadius: 22,
+        border: `1px solid ${UI.lineOnDark}`,
+        background: UI.sideCard,
+        boxShadow: UI.shadow,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      }}
+    >
+      {/* Brand */}
+      <div
+        style={{
+          padding: "14px 14px 10px",
+          borderBottom: `1px solid rgba(255,255,255,0.08)`,
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(225,6,0,0.10) 100%)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 12,
+            overflow: "hidden",
+            border: "1px solid rgba(225,6,0,0.35)",
+            background: "#0b0b0d",
+            boxShadow: "0 12px 26px rgba(0,0,0,0.55)",
+            flex: "0 0 auto",
+          }}
+        >
+          {/* If you have a logo in /public/icons/icon-192.png */}
+          <img
+            src="/icons/icon-192.png"
+            alt="HelixX"
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+        </div>
+
+        <div style={{ lineHeight: 1.15 }}>
+          <div style={{ fontWeight: 980, fontSize: 15, color: UI.inkOnDark }}>
+            HelixX
+          </div>
+          <div style={{ marginTop: 2, fontWeight: 850, fontSize: 11, color: UI.mutedOnDark }}>
+            Precision tracking intelligence
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        {nav.map((item) => {
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => onNavigate?.()}
+              style={{
+                textDecoration: "none",
+                color: UI.inkOnDark,
+                fontWeight: 920,
+                padding: "11px 12px",
+                borderRadius: 14,
+                border: active ? `1px solid ${UI.accentLine}` : `1px solid ${UI.lineOnDark}`,
+                background: active
+                  ? "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(225,6,0,0.14) 100%)"
+                  : "rgba(255,255,255,0.04)",
+                boxShadow: UI.shadowSoft,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                transition:
+                  "transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0px)";
+              }}
+            >
+              <span>{item.label}</span>
+              <span style={{ opacity: 0.55, fontWeight: 950 }}>→</span>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Footer hint */}
+      <div
+        style={{
+          marginTop: "auto",
+          padding: 12,
+          borderTop: `1px solid rgba(255,255,255,0.08)`,
+          color: UI.mutedOnDark,
+          fontWeight: 800,
+          fontSize: 12,
+          lineHeight: 1.35,
+        }}
+      >
+        HelixX helps you track routines, signals,
+        <br />
+        and consistency over time.
+      </div>
+    </aside>
+  );
+}
 
 export function AppShell({
   title,
   subtitle,
   children,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const isMobile = useIsMobile(860);
+  const isMobile = useIsMobile(980);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // ✅ Keep only what you want users to use
-  const navItems: NavItem[] = useMemo(
-    () => [
-      { href: "/", label: "Dashboard", section: "main" },
-      { href: "/health", label: "Health", section: "main" },
-      { href: "/tracker", label: "Tracker", section: "main" },
-      { href: "/vials", label: "Stock", section: "main" },
-      { href: "/calculator", label: "Calculator", section: "tools" },
-    ],
-    []
-  );
-
-  function isActive(href: string) {
-    if (href === "/") return pathname === "/";
-    return pathname?.startsWith(href);
-  }
-
-  const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => (
-    <div
-      style={{
-        border: `1px solid ${UI.line}`,
-        borderRadius: 18,
-        background: UI.card,
-        boxShadow: UI.shadow,
-        padding: 14,
-        height: isMobile ? "auto" : "calc(100vh - 36px)",
-        position: isMobile ? "static" : "sticky",
-        top: 18,
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div style={{ padding: "4px 6px 10px 6px" }}>
-        <div style={{ fontWeight: 950, color: UI.ink, letterSpacing: -0.2 }}>
-          Dose Companion
-        </div>
-        <div style={{ marginTop: 4, fontWeight: 800, color: UI.muted, fontSize: 13 }}>
-          Schedule + injection tracking
-        </div>
-      </div>
-
-      <div style={{ marginTop: 8, color: "rgba(17,17,17,0.45)", fontWeight: 900, fontSize: 11, padding: "6px 6px" }}>
-        MAIN
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {navItems
-          .filter((i) => i.section === "main")
-          .map((item) => {
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onNavigate}
-                style={{
-                  textDecoration: "none",
-                  color: active ? UI.ink : "rgba(17,17,17,0.78)",
-                  fontWeight: 950,
-                  padding: "10px 10px",
-                  borderRadius: 12,
-                  background: active ? UI.accentSoft : "transparent",
-                  border: active ? `1px solid rgba(255,106,61,0.35)` : "1px solid transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span>{item.label}</span>
-                <span style={{ opacity: 0.45, fontWeight: 900 }}>→</span>
-              </Link>
-            );
-          })}
-      </div>
-
-      <div style={{ marginTop: 12, color: "rgba(17,17,17,0.45)", fontWeight: 900, fontSize: 11, padding: "6px 6px" }}>
-        TOOLS
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {navItems
-          .filter((i) => i.section === "tools")
-          .map((item) => {
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onNavigate}
-                style={{
-                  textDecoration: "none",
-                  color: active ? UI.ink : "rgba(17,17,17,0.78)",
-                  fontWeight: 950,
-                  padding: "10px 10px",
-                  borderRadius: 12,
-                  background: active ? UI.accentSoft : "transparent",
-                  border: active ? `1px solid rgba(255,106,61,0.35)` : "1px solid transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span>{item.label}</span>
-                <span style={{ opacity: 0.45, fontWeight: 900 }}>→</span>
-              </Link>
-            );
-          })}
-      </div>
-
-      <div
-        style={{
-          marginTop: "auto",
-          borderTop: `1px solid rgba(17,17,17,0.08)`,
-          paddingTop: 12,
-          color: "rgba(17,17,17,0.58)",
-          fontWeight: 800,
-          fontSize: 12,
-        }}
-      >
-        Tip: Set your schedule once, then log injections as you go.
-      </div>
-    </div>
-  );
+  // App background (single source of truth)
+  useEffect(() => {
+    document.body.style.background = UI.bg;
+    document.body.style.margin = "0";
+    document.body.style.color = UI.inkOnDark;
+  }, []);
 
   return (
-    <main style={{ background: UI.bg, minHeight: "100vh" }}>
-      <style jsx global>{`
-        html,
-        body {
-          background: ${UI.bg};
-        }
-        .safeBottom {
-          padding-bottom: env(safe-area-inset-bottom);
-        }
-        body {
-          overscroll-behavior-y: none;
-        }
-      `}</style>
-
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: "18px 18px 28px",
+        background:
+          `radial-gradient(880px 520px at 16% 18%, rgba(225,6,0,0.16) 0%, rgba(225,6,0,0.06) 28%, rgba(0,0,0,0) 62%),` +
+          `radial-gradient(900px 620px at 84% 12%, rgba(255,42,42,0.10) 0%, rgba(0,0,0,0) 58%),` +
+          `radial-gradient(780px 520px at 55% 90%, rgba(255,255,255,0.06) 0%, rgba(0,0,0,0) 60%),` +
+          `${UI.bg}`,
+      }}
+    >
       <AppPage>
-        {/* Header */}
+        {/* Header (light card like Dashboard) */}
         <div
-          className="safeBottom"
           style={{
-            border: `1px solid ${UI.line}`,
-            borderRadius: 20,
+            border: `1px solid rgba(255,255,255,0.10)`,
+            borderRadius: 22,
             padding: 14,
-            background: "linear-gradient(180deg, #fff 0%, #fff7f3 100%)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)",
             boxShadow: UI.shadow,
             display: "flex",
             justifyContent: "space-between",
             gap: 12,
             flexWrap: "wrap",
             alignItems: "center",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
           }}
         >
           <div style={{ minWidth: 220 }}>
-            <div style={{ fontSize: 28, fontWeight: 950, color: UI.ink, letterSpacing: -0.2 }}>
+            <div style={{ fontSize: 28, fontWeight: 950, color: UI.inkOnDark, letterSpacing: -0.2 }}>
               {title}
             </div>
-            {subtitle ? <div style={{ marginTop: 6, color: UI.muted, fontWeight: 800 }}>{subtitle}</div> : null}
+            {subtitle ? (
+              <div style={{ marginTop: 6, color: UI.mutedOnDark, fontWeight: 800 }}>
+                {subtitle}
+              </div>
+            ) : null}
           </div>
 
-          {/* ✅ Menu button: force visible (no grey/opacity issues) */}
           {isMobile ? (
             <button
               onClick={() => setMenuOpen(true)}
               style={{
                 padding: "10px 12px",
                 borderRadius: 999,
-                border: `1px solid ${UI.line}`,
-                background: "#fff",
-                color: UI.ink,
+                border: `1px solid rgba(255,255,255,0.14)`,
+                background: "rgba(255,255,255,0.06)",
+                color: UI.inkOnDark,
                 fontWeight: 950,
                 cursor: "pointer",
-                boxShadow: "0 10px 22px rgba(0,0,0,0.06)",
-                opacity: 1,
+                boxShadow: "0 10px 22px rgba(0,0,0,0.25)",
               }}
             >
               ☰ Menu
@@ -277,57 +306,53 @@ export function AppShell({
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr" : "290px 1fr",
             gap: 14,
-            alignItems: "start",
+            alignItems: "stretch",
           }}
         >
           {!isMobile ? <Sidebar /> : null}
-          <div>{children}</div>
+          <div style={{ minHeight: 1 }}>{children}</div>
         </div>
 
-        {/* Mobile menu sheet */}
+        {/* Mobile menu */}
         {isMobile && menuOpen ? (
           <GlassOverlay onClose={() => setMenuOpen(false)} align="bottom">
             <div
               onClick={(e) => e.stopPropagation()}
-              className="safeBottom"
               style={{
                 width: "min(720px, 100%)",
-                background: "rgba(255,255,255,0.92)",
+                background: "rgba(21,21,24,0.92)",
+                border: `1px solid rgba(255,255,255,0.12)`,
+                borderRadius: 22,
+                boxShadow: "0 24px 70px rgba(0,0,0,0.40)",
+                overflow: "hidden",
                 backdropFilter: "blur(14px)",
                 WebkitBackdropFilter: "blur(14px)",
-                border: `1px solid ${UI.line}`,
-                borderRadius: 20,
-                boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
-                overflow: "hidden",
               }}
             >
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
+              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(255,255,255,0.18)", margin: "10px auto 0" }} />
 
               <div
                 style={{
                   padding: 14,
-                  borderBottom: `1px solid ${UI.line}`,
+                  borderBottom: `1px solid rgba(255,255,255,0.10)`,
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   gap: 10,
                 }}
               >
-                <div style={{ fontWeight: 950, fontSize: 16, color: UI.ink }}>Menu</div>
+                <div style={{ fontWeight: 950, fontSize: 16, color: UI.inkOnDark }}>Menu</div>
 
-                {/* ✅ Close button: red + visible */}
                 <button
                   onClick={() => setMenuOpen(false)}
                   style={{
                     padding: "10px 12px",
                     borderRadius: 999,
-                    border: `1px solid rgba(255,106,61,0.55)`,
+                    border: `1px solid ${UI.accentLine}`,
                     background: UI.accent,
                     color: "#fff",
                     cursor: "pointer",
                     fontWeight: 950,
-                    boxShadow: "0 10px 22px rgba(0,0,0,0.10)",
-                    opacity: 1,
                   }}
                 >
                   Close

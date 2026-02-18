@@ -1,13 +1,16 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { AppShell, AppPage, UI } from "../components/AppShell";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AppShell, AppPage, UI, GlassOverlay } from "../components/AppShell";
 
-type Intensity = "low" | "med" | "high";
+/** Storage key MUST stay aligned with Dashboard */
+const STORAGE_KEY = "health_entries_v2";
 
+/** Types */
 type HealthEntry = {
-  id: number;
-  dateTimeISO: string; // when the entry is for
+  id: string;
+  dateYMD: string; // YYYY-MM-DD
+  timeHM: string; // HH:MM
   createdAtISO: string;
 
   weightKg?: string;
@@ -18,79 +21,67 @@ type HealthEntry = {
   waistCm?: string;
   hipsCm?: string;
   chestCm?: string;
+  armCm?: string;
+  thighCm?: string;
 
-  exerciseType?: string;
-  exerciseMinutes?: string;
-  exerciseIntensity?: Intensity;
+  steps?: string;
+  workoutMin?: string;
+  intensity?: "light" | "moderate" | "hard";
+  workoutType?: string;
 
   notes?: string;
 };
 
-const STORAGE_KEY = "health_entries_v2";
-
+/** Date helpers */
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
-
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-
-function monthLabel(date: Date) {
-  return date.toLocaleString(undefined, { month: "long", year: "numeric" });
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function endOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+}
+function addDays(d: Date, days: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + days);
+  return x;
+}
+function jsDayToMonFirst(jsDay: number) {
+  // JS: Sun=0..Sat=6 -> Mon=0..Sun=6
+  return (jsDay + 6) % 7;
+}
+function monthLabel(d: Date) {
+  return d.toLocaleString(undefined, { month: "long", year: "numeric" });
+}
+function dayNameShort(idx: number) {
+  const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return names[idx] ?? "";
 }
 
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+/** Small utils */
+function uid() {
+  return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
 }
-
-function endOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
 }
-
-// Monday-first index (Mon=0...Sun=6)
-function mondayIndex(daySun0: number) {
-  return (daySun0 + 6) % 7;
-}
-
-function dateToLocalDateValue(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function timeToLocalTimeValue(d: Date) {
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-function safeNumText(s: string) {
-  const t = s.trim();
-  if (!t) return "";
-  // allow 12, 12.3, 0.5
-  return /^(\d+(\.\d+)?)$/.test(t) ? t : t;
-}
-
-function useIsMobile(maxPx = 720) {
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${maxPx}px)`);
-    const onChange = () => setIsMobile(mq.matches);
-    onChange();
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-  }, [maxPx]);
-
-  return isMobile;
+function safeNum(v?: string) {
+  if (!v) return null;
+  const n = Number(String(v).trim().replace(",", "."));
+  return Number.isFinite(n) ? n : null;
 }
 
 export default function HealthPage() {
-  const isMobile = useIsMobile(720);
-
-  const [entries, setEntries] = useState<HealthEntry[]>([]);
-  const [toast, setToast] = useState<string | null>(null);
-
-  // Form state
-  const [dateVal, setDateVal] = useState<string>(dateToLocalDateValue(new Date()));
-  const [timeVal, setTimeVal] = useState<string>(timeToLocalTimeValue(new Date()));
+  /** Form state */
+  const [dateYMD, setDateYMD] = useState<string>(() => toYMD(new Date()));
+  const [timeHM, setTimeHM] = useState<string>(() => {
+    const d = new Date();
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  });
 
   const [weightKg, setWeightKg] = useState("");
   const [restingHr, setRestingHr] = useState("");
@@ -100,731 +91,847 @@ export default function HealthPage() {
   const [waistCm, setWaistCm] = useState("");
   const [hipsCm, setHipsCm] = useState("");
   const [chestCm, setChestCm] = useState("");
+  const [armCm, setArmCm] = useState("");
+  const [thighCm, setThighCm] = useState("");
 
-  const [exerciseType, setExerciseType] = useState("");
-  const [exerciseMinutes, setExerciseMinutes] = useState("");
-  const [exerciseIntensity, setExerciseIntensity] = useState<Intensity>("low");
+  const [steps, setSteps] = useState("");
+  const [workoutMin, setWorkoutMin] = useState("");
+  const [intensity, setIntensity] = useState<"light" | "moderate" | "hard">("moderate");
+  const [workoutType, setWorkoutType] = useState("");
 
   const [notes, setNotes] = useState("");
 
-  // Collapsible sections
-  const [openMeasurements, setOpenMeasurements] = useState(false);
-  const [openExercise, setOpenExercise] = useState(false);
-  const [openNotes, setOpenNotes] = useState(false);
+  /** Data */
+  const [entries, setEntries] = useState<HealthEntry[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Calendar
-  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
-  const [selectedDayYMD, setSelectedDayYMD] = useState<string | null>(null);
+  /** Calendar + modal */
+  const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()));
+  const [selectedYMD, setSelectedYMD] = useState<string | null>(null);
 
-  // Load / Save
+  const topRef = useRef<HTMLDivElement | null>(null);
+
+  /** Load */
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setEntries(parsed);
-      } catch {
-        // ignore
-      }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setEntries(JSON.parse(raw));
+    } catch {
+      setEntries([]);
     }
   }, []);
 
+  /** Persist */
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    } catch {
+      // ignore
+    }
   }, [entries]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 1100);
-    return () => clearTimeout(t);
-  }, [toast]);
+  /** Calendar grid */
+  const cal = useMemo(() => {
+    const mStart = startOfMonth(month);
+    const mEnd = endOfMonth(month);
 
-  const entriesByDay = useMemo(() => {
-    const map: Record<string, HealthEntry[]> = {};
-    for (const e of entries) {
-      const key = toYMD(new Date(e.dateTimeISO));
-      if (!map[key]) map[key] = [];
-      map[key].push(e);
+    const startOffset = jsDayToMonFirst(mStart.getDay());
+    const gridStart = addDays(mStart, -startOffset);
+
+    const endOffset = 6 - jsDayToMonFirst(mEnd.getDay());
+    const gridEnd = addDays(mEnd, endOffset);
+
+    const days: Date[] = [];
+    let d = new Date(gridStart);
+    while (d.getTime() <= gridEnd.getTime()) {
+      days.push(new Date(d));
+      d = addDays(d, 1);
+      if (days.length > 60) break;
     }
-    for (const k of Object.keys(map)) {
-      map[k].sort((a, b) => new Date(b.dateTimeISO).getTime() - new Date(a.dateTimeISO).getTime());
+
+    return { gridStart, gridEnd, days, mStart };
+  }, [month]);
+
+  const todayYMD = useMemo(() => toYMD(new Date()), []);
+
+  /** Counts per day */
+  const byDayCount = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const e of entries) {
+      const ymd = e.dateYMD?.slice(0, 10);
+      if (!ymd) continue;
+      map[ymd] = (map[ymd] ?? 0) + 1;
     }
     return map;
   }, [entries]);
 
-  const todayYMD = toYMD(new Date());
-  const dayEntries = selectedDayYMD ? entriesByDay[selectedDayYMD] ?? [] : [];
+  const heatMax = useMemo(() => {
+    let mx = 0;
+    for (const k of Object.keys(byDayCount)) mx = Math.max(mx, byDayCount[k] ?? 0);
+    return Math.max(1, mx);
+  }, [byDayCount]);
 
-  const latest = useMemo(() => {
-    if (!entries.length) return null;
-    const sorted = [...entries].sort((a, b) => new Date(b.dateTimeISO).getTime() - new Date(a.dateTimeISO).getTime());
-    return sorted[0];
-  }, [entries]);
+  /** Selected day entries */
+  const selectedEntries = useMemo(() => {
+    if (!selectedYMD) return [];
+    return entries
+      .filter((e) => e.dateYMD === selectedYMD)
+      .slice()
+      .sort((a, b) => String(b.createdAtISO).localeCompare(String(a.createdAtISO)));
+  }, [entries, selectedYMD]);
 
-  const calendarCells = useMemo(() => {
-    const start = startOfMonth(calendarMonth);
-    const end = endOfMonth(calendarMonth);
-
-    const offset = mondayIndex(start.getDay());
-    const daysInMonth = end.getDate();
-    const totalCells = Math.ceil((offset + daysInMonth) / 7) * 7;
-
-    const cells: Array<{ ymd?: string; dayNum?: number }> = [];
-    for (let i = 0; i < totalCells; i++) {
-      const dayNum = i - offset + 1;
-      if (dayNum >= 1 && dayNum <= daysInMonth) {
-        const ymd = `${start.getFullYear()}-${pad2(start.getMonth() + 1)}-${pad2(dayNum)}`;
-        cells.push({ ymd, dayNum });
-      } else {
-        cells.push({});
-      }
-    }
-    return cells;
-  }, [calendarMonth]);
-
-  const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-  function setNowTime() {
-    const d = new Date();
-    setDateVal(dateToLocalDateValue(d));
-    setTimeVal(timeToLocalTimeValue(d));
+  function prevMonth() {
+    setMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+  }
+  function nextMonth() {
+    setMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+  }
+  function goToday() {
+    setMonth(startOfMonth(new Date()));
   }
 
-  function clearForm() {
+  function resetFormKeepDateTime() {
     setWeightKg("");
     setRestingHr("");
     setBpSys("");
     setBpDia("");
+
     setWaistCm("");
     setHipsCm("");
     setChestCm("");
-    setExerciseType("");
-    setExerciseMinutes("");
-    setExerciseIntensity("low");
+    setArmCm("");
+    setThighCm("");
+
+    setSteps("");
+    setWorkoutMin("");
+    setIntensity("moderate");
+    setWorkoutType("");
+
     setNotes("");
-    setToast("Cleared");
+  }
+
+  function fillFormFromEntry(e: HealthEntry) {
+    setDateYMD(e.dateYMD);
+    setTimeHM(e.timeHM);
+
+    setWeightKg(e.weightKg ?? "");
+    setRestingHr(e.restingHr ?? "");
+    setBpSys(e.bpSys ?? "");
+    setBpDia(e.bpDia ?? "");
+
+    setWaistCm(e.waistCm ?? "");
+    setHipsCm(e.hipsCm ?? "");
+    setChestCm(e.chestCm ?? "");
+    setArmCm(e.armCm ?? "");
+    setChestCm(e.chestCm ?? "");
+    setThighCm(e.thighCm ?? "");
+
+    setSteps(e.steps ?? "");
+    setWorkoutMin(e.workoutMin ?? "");
+    setIntensity(e.intensity ?? "moderate");
+    setWorkoutType(e.workoutType ?? "");
+
+    setNotes(e.notes ?? "");
+  }
+
+  function scrollToTopForm() {
+    requestAnimationFrame(() => {
+      topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function saveEntry() {
-    // Create an ISO from local date + time safely
-    const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(dateVal) ? dateVal : dateToLocalDateValue(new Date());
-    const safeTime = /^\d{2}:\d{2}$/.test(timeVal) ? timeVal : timeToLocalTimeValue(new Date());
-    const dtLocal = new Date(`${safeDate}T${safeTime}`);
+    const nowISO = new Date().toISOString();
 
-    const item: HealthEntry = {
-      id: Date.now(),
-      dateTimeISO: dtLocal.toISOString(),
-      createdAtISO: new Date().toISOString(),
+    const next: HealthEntry = {
+      id: editingId ?? uid(),
+      dateYMD,
+      timeHM,
+      createdAtISO: editingId
+        ? entries.find((x) => x.id === editingId)?.createdAtISO ?? nowISO
+        : nowISO,
 
-      weightKg: safeNumText(weightKg) || undefined,
-      restingHr: safeNumText(restingHr) || undefined,
-      bpSys: safeNumText(bpSys) || undefined,
-      bpDia: safeNumText(bpDia) || undefined,
+      weightKg: weightKg.trim() || undefined,
+      restingHr: restingHr.trim() || undefined,
+      bpSys: bpSys.trim() || undefined,
+      bpDia: bpDia.trim() || undefined,
 
-      waistCm: safeNumText(waistCm) || undefined,
-      hipsCm: safeNumText(hipsCm) || undefined,
-      chestCm: safeNumText(chestCm) || undefined,
+      waistCm: waistCm.trim() || undefined,
+      hipsCm: hipsCm.trim() || undefined,
+      chestCm: chestCm.trim() || undefined,
+      armCm: armCm.trim() || undefined,
+      thighCm: thighCm.trim() || undefined,
 
-      exerciseType: exerciseType.trim() || undefined,
-      exerciseMinutes: safeNumText(exerciseMinutes) || undefined,
-      exerciseIntensity: exerciseType.trim() || exerciseMinutes.trim() ? exerciseIntensity : undefined,
+      steps: steps.trim() || undefined,
+      workoutMin: workoutMin.trim() || undefined,
+      intensity,
+      workoutType: workoutType.trim() || undefined,
 
       notes: notes.trim() || undefined,
     };
 
-    setEntries((prev) => [item, ...prev]);
-    setToast("Saved ✓");
+    setEntries((prev) => {
+      const idx = prev.findIndex((x) => x.id === next.id);
+      if (idx >= 0) {
+        const copy = prev.slice();
+        copy[idx] = next;
+        return copy;
+      }
+      return [next, ...prev];
+    });
+
+    setEditingId(null);
+    resetFormKeepDateTime();
   }
 
-  function deleteEntry(id: number) {
-    setEntries((prev) => prev.filter((x) => x.id !== id));
-    setToast("Deleted");
+  function startEdit(entry: HealthEntry) {
+    setEditingId(entry.id);
+    fillFormFromEntry(entry);
+    setSelectedYMD(null);
+    scrollToTopForm();
   }
 
-  function openDay(ymd: string) {
-    setSelectedDayYMD(ymd);
+  function deleteEntry(entryId: string) {
+    setEntries((prev) => prev.filter((x) => x.id !== entryId));
   }
 
-  // ---------- Styles (mobile-first tweaks without CSS files) ----------
-  const cardPad = isMobile ? 12 : 14;
-  const cardRadius = 18;
-
-  const labelStyle: React.CSSProperties = {
-    fontWeight: 900,
-    color: isMobile ? "rgba(17,17,17,0.86)" : "rgba(17,17,17,0.74)",
-    marginBottom: isMobile ? 6 : 8,
-    fontSize: isMobile ? 12 : 13,
-  };
-
-  const sectionTitleStyle: React.CSSProperties = {
-    fontWeight: 900,
-    fontSize: isMobile ? 16 : 18,
-    color: UI.ink,
-  };
-
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    minWidth: 0,
-    padding: isMobile ? 11 : 12,
-    borderRadius: 14,
-    border: `1px solid ${UI.line}`,
-    fontWeight: 900,
-    background: "#fff",
-    color: UI.ink,
-    boxSizing: "border-box",
-  };
-
-  const pillButton = (active = false): React.CSSProperties => ({
-    padding: isMobile ? "10px 12px" : "10px 12px",
-    borderRadius: 999,
-    border: active ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
-    background: active ? UI.accentSoft : "#fff",
-    cursor: "pointer",
-    fontWeight: 900,
-    boxShadow: UI.shadow,
-    whiteSpace: "nowrap",
-    color: UI.ink,
-  });
-
-  const collapsibleHeader = (open: boolean): React.CSSProperties => ({
-    width: "100%",
-    padding: isMobile ? "12px 12px" : "12px 14px",
-    borderRadius: 16,
-    border: open ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
-    background: open ? "linear-gradient(180deg,#fff 0%, #fff7f3 100%)" : UI.accentSoft,
-    cursor: "pointer",
-    fontWeight: 900,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    boxShadow: UI.shadow,
-    color: UI.ink, // ✅ makes the text readable (was looking “washed out” on mobile)
-  });
-
-  const smallMuted: React.CSSProperties = {
-    color: isMobile ? "rgba(17,17,17,0.70)" : UI.muted,
-    fontWeight: 800,
-  };
-
-  // Calendar sizing fix
-  const calGap = isMobile ? 6 : 8;
-  const calCellH = isMobile ? 66 : 92;
+  /** Light “Dashboard-like” surfaces */
+  const LIGHT_CARD_BG =
+    "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.86) 50%, rgba(255,255,255,0.82) 100%)";
+  const LIGHT_TILE_BG =
+    "linear-gradient(180deg, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0.80) 100%)";
 
   return (
     <AppShell title="Health Board" subtitle="Weight, measurements, BP, and exercise — all in one place.">
       <AppPage>
-        {/* Toast */}
-        {toast && (
-          <div
-            style={{
-              position: "fixed",
-              top: 14,
-              left: "50%",
-              transform: "translateX(-50%)",
-              background: UI.ink,
-              color: "#fff",
-              padding: "10px 14px",
-              borderRadius: 999,
-              fontWeight: 900,
-              zIndex: 100,
-              boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
-            }}
-          >
-            {toast}
-          </div>
-        )}
+        <style jsx global>{`
+          .wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-height: calc(100vh - 220px);
+          }
 
-        {/* Latest snapshot */}
-        <section
-          style={{
-            marginTop: 12,
-            border: `1px solid ${UI.line}`,
-            borderRadius: cardRadius,
-            padding: cardPad,
-            background: "#fff",
-            boxShadow: UI.shadow,
-          }}
-        >
-          <div style={sectionTitleStyle}>Latest snapshot</div>
+          .panel {
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55);
+            padding: 14px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+          }
 
-          {!latest ? (
-            <div style={{ marginTop: 8, ...smallMuted }}>No entries yet. Add your first check-in below.</div>
-          ) : (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <div style={{ fontWeight: 900 }}>
-                  {new Date(latest.dateTimeISO).toLocaleString(undefined, { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                </div>
-                <button onClick={() => openDay(toYMD(new Date(latest.dateTimeISO)))} style={pillButton(false)}>
-                  View day →
-                </button>
-              </div>
+          /* ✅ Dashboard-like LIGHT cards */
+          .lightCard {
+            border-radius: 22px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: ${LIGHT_CARD_BG};
+            box-shadow: 0 18px 55px rgba(0, 0, 0, 0.25);
+            padding: 14px;
+            color: #121318;
+          }
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", ...smallMuted }}>
-                {latest.weightKg ? (
-                  <div>
-                    ⚖️ <b style={{ color: UI.ink }}>{latest.weightKg}kg</b>
-                  </div>
-                ) : null}
-                {latest.restingHr ? (
-                  <div>
-                    ❤️ <b style={{ color: UI.ink }}>{latest.restingHr} bpm</b>
-                  </div>
-                ) : null}
-                {latest.bpSys && latest.bpDia ? (
-                  <div>
-                    🩺 <b style={{ color: UI.ink }}>{latest.bpSys}/{latest.bpDia}</b>
-                  </div>
-                ) : null}
-                {latest.exerciseMinutes ? (
-                  <div>
-                    🏃 <b style={{ color: UI.ink }}>{latest.exerciseMinutes} min</b>
-                  </div>
-                ) : null}
-              </div>
+          .hTitle {
+            font-weight: 980;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+          }
+          .hSub {
+            color: rgba(18, 19, 24, 0.65);
+            font-weight: 850;
+            font-size: 12px;
+          }
 
-              {latest.notes ? <div style={{ marginTop: 2, color: "rgba(17,17,17,0.80)", fontWeight: 700 }}>{latest.notes}</div> : null}
-            </div>
-          )}
-        </section>
+          .grid2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+          @media (max-width: 760px) {
+            .grid2 {
+              grid-template-columns: 1fr;
+            }
+          }
 
-        {/* New entry */}
-        <section
-          style={{
-            marginTop: 14,
-            border: `1px solid ${UI.line}`,
-            borderRadius: cardRadius,
-            padding: cardPad,
-            background: "#fff",
-            boxShadow: UI.shadow,
-          }}
-        >
-          <div style={sectionTitleStyle}>New entry</div>
+          label {
+            display: block;
+            font-weight: 900;
+            font-size: 12px;
+            color: rgba(18, 19, 24, 0.78);
+            margin-bottom: 6px;
+          }
 
-          {/* Date + Time */}
-          <div
-            style={{
-              marginTop: 10,
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-              gap: 10,
-            }}
-          >
-            <div>
-              <div style={labelStyle}>Date</div>
-              <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={inputStyle} />
-            </div>
+          .input {
+            width: 100%;
+            border-radius: 14px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: rgba(0, 0, 0, 0.04);
+            padding: 10px 12px;
+            font-weight: 850;
+            color: #121318;
+            outline: none;
+          }
+          .input:focus {
+            border-color: rgba(255, 42, 58, 0.35);
+            box-shadow: 0 0 0 3px rgba(255, 42, 58, 0.12);
+          }
 
-            <div>
-              <div style={labelStyle}>Time</div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 110px", gap: 10, alignItems: "center" }}>
-                <input type="time" value={timeVal} onChange={(e) => setTimeVal(e.target.value)} style={inputStyle} />
-                <button onClick={setNowTime} style={{ ...pillButton(false), width: isMobile ? "100%" : "auto" }}>
-                  Now
-                </button>
-              </div>
-            </div>
-          </div>
+          .btnRow {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            align-items: center;
+          }
 
-          {/* Core vitals (✅ mobile: 2 columns so the block is smaller) */}
-          <div
-            style={{
-              marginTop: 12,
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr",
-              gap: isMobile ? 10 : 10,
-              alignItems: "start",
-            }}
-          >
-            <div>
-              <div style={labelStyle}>Weight (kg)</div>
-              <input value={weightKg} onChange={(e) => setWeightKg(e.target.value)} placeholder="e.g. 78.4" style={inputStyle} />
-            </div>
+          .btn {
+            padding: 10px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: rgba(0, 0, 0, 0.04);
+            color: rgba(18, 19, 24, 0.92);
+            font-weight: 950;
+            cursor: pointer;
+          }
 
-            <div>
-              <div style={labelStyle}>Resting HR (bpm)</div>
-              <input value={restingHr} onChange={(e) => setRestingHr(e.target.value)} placeholder="e.g. 62" style={inputStyle} />
-            </div>
+          .btnPrimary {
+            border: 1px solid rgba(255, 42, 58, 0.55);
+            background: ${UI.accent};
+            color: #fff;
+          }
 
-            <div>
-              <div style={labelStyle}>BP (sys)</div>
-              <input value={bpSys} onChange={(e) => setBpSys(e.target.value)} placeholder="e.g. 120" style={inputStyle} />
-            </div>
+          .btnDanger {
+            border: 1px solid rgba(255, 42, 58, 0.30);
+            background: rgba(255, 42, 58, 0.10);
+            color: rgba(18, 19, 24, 0.92);
+          }
 
-            <div>
-              <div style={labelStyle}>BP (dia)</div>
-              <input value={bpDia} onChange={(e) => setBpDia(e.target.value)} placeholder="e.g. 80" style={inputStyle} />
-            </div>
-          </div>
+          /* Calendar */
+          .calHeader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+          }
 
-          {/* Collapsibles */}
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* Measurements */}
-            <button onClick={() => setOpenMeasurements((v) => !v)} style={collapsibleHeader(openMeasurements)}>
-              <span>Measurements (optional)</span>
-              <span style={{ color: "rgba(17,17,17,0.70)", fontWeight: 900 }}>{openMeasurements ? "−" : "+"}</span>
-            </button>
+          .calControls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
 
-            {openMeasurements && (
-              <div
-                style={{
-                  border: `1px solid ${UI.line}`,
-                  borderRadius: 16,
-                  padding: isMobile ? 12 : 14,
-                  background: "#fff",
-                  boxShadow: UI.shadow,
-                }}
-              >
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 10 }}>
-                  <div>
-                    <div style={labelStyle}>Waist (cm)</div>
-                    <input value={waistCm} onChange={(e) => setWaistCm(e.target.value)} placeholder="Waist" style={inputStyle} />
-                  </div>
-                  <div>
-                    <div style={labelStyle}>Hips (cm)</div>
-                    <input value={hipsCm} onChange={(e) => setHipsCm(e.target.value)} placeholder="Hips" style={inputStyle} />
-                  </div>
-                  <div>
-                    <div style={labelStyle}>Chest (cm)</div>
-                    <input value={chestCm} onChange={(e) => setChestCm(e.target.value)} placeholder="Chest" style={inputStyle} />
-                  </div>
-                </div>
-              </div>
-            )}
+          .iconBtn {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: rgba(0, 0, 0, 0.04);
+            cursor: pointer;
+            font-weight: 950;
+            color: rgba(18, 19, 24, 0.92);
+          }
 
-            {/* Exercise */}
-            <button onClick={() => setOpenExercise((v) => !v)} style={collapsibleHeader(openExercise)}>
-              <span>Exercise (optional)</span>
-              <span style={{ color: "rgba(17,17,17,0.70)", fontWeight: 900 }}>{openExercise ? "−" : "+"}</span>
-            </button>
+          .monthPill {
+            padding: 9px 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: rgba(0, 0, 0, 0.04);
+            color: rgba(18, 19, 24, 0.92);
+            font-weight: 950;
+            min-width: 180px;
+            text-align: center;
+          }
 
-            {openExercise && (
-              <div
-                style={{
-                  border: `1px solid ${UI.line}`,
-                  borderRadius: 16,
-                  padding: isMobile ? 12 : 14,
-                  background: "#fff",
-                  boxShadow: UI.shadow,
-                }}
-              >
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 10 }}>
-                  <div>
-                    <div style={labelStyle}>Type</div>
-                    <input value={exerciseType} onChange={(e) => setExerciseType(e.target.value)} placeholder="walk, gym, yoga..." style={inputStyle} />
-                  </div>
-                  <div>
-                    <div style={labelStyle}>Minutes</div>
-                    <input value={exerciseMinutes} onChange={(e) => setExerciseMinutes(e.target.value)} placeholder="e.g. 30" style={inputStyle} />
-                  </div>
-                </div>
+          .todayBtn {
+            padding: 9px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 42, 58, 0.25);
+            background: rgba(255, 42, 58, 0.06);
+            color: rgba(18, 19, 24, 0.92);
+            font-weight: 950;
+            cursor: pointer;
+          }
 
-                <div style={{ marginTop: 10 }}>
-                  <div style={labelStyle}>Intensity</div>
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button onClick={() => setExerciseIntensity("low")} style={pillButton(exerciseIntensity === "low")}>
-                      LOW
-                    </button>
-                    <button onClick={() => setExerciseIntensity("med")} style={pillButton(exerciseIntensity === "med")}>
-                      MED
-                    </button>
-                    <button onClick={() => setExerciseIntensity("high")} style={pillButton(exerciseIntensity === "high")}>
-                      HIGH
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+          .dowRow {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+            color: rgba(18, 19, 24, 0.65);
+            font-weight: 900;
+            font-size: 12px;
+            padding: 0 4px;
+          }
 
-            {/* Notes */}
-            <button onClick={() => setOpenNotes((v) => !v)} style={collapsibleHeader(openNotes)}>
-              <span>Notes (optional)</span>
-              <span style={{ color: "rgba(17,17,17,0.70)", fontWeight: 900 }}>{openNotes ? "−" : "+"}</span>
-            </button>
+          .calGrid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 10px;
+          }
 
-            {openNotes && (
-              <div
-                style={{
-                  border: `1px solid ${UI.line}`,
-                  borderRadius: 16,
-                  padding: isMobile ? 12 : 14,
-                  background: "#fff",
-                  boxShadow: UI.shadow,
-                }}
-              >
-                <div style={labelStyle}>Notes</div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Optional notes..."
-                  style={{
-                    ...inputStyle,
-                    minHeight: isMobile ? 90 : 110,
-                    resize: "vertical",
-                    fontWeight: 800,
-                  }}
-                />
-              </div>
-            )}
-          </div>
+          .dayBtn {
+            text-align: left;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: ${LIGHT_TILE_BG};
+            box-shadow: 0 12px 26px rgba(0, 0, 0, 0.12);
+            padding: 10px;
+            min-height: 72px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            cursor: pointer;
+            transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+          }
 
-          {/* Actions */}
-          <div
-            style={{
-              marginTop: 12,
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 180px",
-              gap: 10,
-              alignItems: "center",
-            }}
-          >
-            <button
-              onClick={saveEntry}
-              style={{
-                width: "100%",
-                padding: isMobile ? "14px 16px" : "14px 16px",
-                borderRadius: 16,
-                border: `1px solid ${UI.accent}`,
-                background: UI.accent,
-                color: "#fff",
-                cursor: "pointer",
-                fontWeight: 900,
-                fontSize: 16,
-                boxShadow: UI.shadow,
-              }}
-            >
-              Save entry →
-            </button>
+          .dayBtn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
+            border-color: rgba(0, 0, 0, 0.14);
+          }
 
-            <button
-              onClick={clearForm}
-              style={{
-                width: "100%",
-                padding: "14px 16px",
-                borderRadius: 16,
-                border: `1px solid ${UI.line}`,
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 900,
-                color: UI.ink,
-              }}
-            >
-              Clear
-            </button>
-          </div>
+          .dayTop {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+          }
 
-          <div style={{ marginTop: 10, color: isMobile ? "rgba(17,17,17,0.70)" : UI.muted, fontWeight: 800 }}>
-            Everything is stored locally in your browser (no account needed).
-          </div>
-        </section>
+          .dayNum {
+            font-weight: 980;
+            color: rgba(18, 19, 24, 0.92);
+            font-size: 14px;
+          }
 
-        {/* Calendar */}
-        <section
-          style={{
-            marginTop: 14,
-            border: `1px solid ${UI.line}`,
-            borderRadius: cardRadius,
-            padding: cardPad,
-            background: "#fff",
-            boxShadow: UI.shadow,
-            overflow: "hidden", // IMPORTANT: prevents the “Sunday pill” overflow look on mobile
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <div style={{ fontWeight: 900, fontSize: isMobile ? 15 : 16 }}>{monthLabel(calendarMonth)}</div>
+          .outside {
+            opacity: 0.55;
+          }
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
-                style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900, background: "#fff", color: UI.ink }}
-              >
-                ← Prev
-              </button>
+          .todayRing {
+            box-shadow: 0 0 0 2px rgba(255, 42, 58, 0.18), 0 12px 26px rgba(0, 0, 0, 0.12);
+            border-color: rgba(255, 42, 58, 0.28) !important;
+          }
 
-              <button
-                onClick={() => setCalendarMonth(new Date())}
-                style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900, background: "#fff", color: UI.ink }}
-              >
-                This month
-              </button>
+          .dotRow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+          }
 
-              <button
-                onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
-                style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, cursor: "pointer", fontWeight: 900, background: "#fff", color: UI.ink }}
-              >
-                Next →
-              </button>
-            </div>
-          </div>
+          .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 99px;
+            display: inline-block;
+            background: rgba(255, 42, 58, 0.28);
+          }
 
-          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: calGap }}>
-            {weekDays.map((w) => (
-              <div key={w} style={{ fontWeight: 900, color: "rgba(17,17,17,0.62)", fontSize: isMobile ? 11 : 12 }}>
-                {w}
-              </div>
-            ))}
-          </div>
+          .countBadge {
+            font-size: 12px;
+            font-weight: 950;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: rgba(0, 0, 0, 0.04);
+            color: rgba(18, 19, 24, 0.82);
+          }
 
-          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: calGap }}>
-            {calendarCells.map((c, idx) => {
-              if (!c.ymd) {
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      height: calCellH,
-                      borderRadius: 16,
-                      border: `1px solid rgba(17,17,17,0.06)`,
-                      background: "rgba(255,255,255,0.6)",
-                    }}
-                  />
-                );
-              }
+          /* Modal content */
+          .modal {
+            width: min(920px, calc(100vw - 28px));
+            border-radius: 20px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: ${LIGHT_CARD_BG};
+            box-shadow: 0 28px 90px rgba(0, 0, 0, 0.35);
+            overflow: hidden;
+            color: #121318;
+          }
 
-              const items = entriesByDay[c.ymd] ?? [];
-              const isToday = c.ymd === todayYMD;
+          .modalHeader {
+            padding: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+          }
 
-              return (
-                <button
-                  key={c.ymd}
-                  onClick={() => openDay(c.ymd!)}
-                  style={{
-                    width: "100%",
-                    minWidth: 0,
-                    height: calCellH,
-                    borderRadius: 16,
-                    border: isToday ? `2px solid ${UI.accent}` : `1px solid ${UI.line}`,
-                    background: isToday ? "linear-gradient(180deg, #fff 0%, #fff7f3 100%)" : "#fff",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    padding: isMobile ? 8 : 10,
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    boxSizing: "border-box",
-                    overflow: "hidden",
-                    color: UI.ink,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-                    <div style={{ fontWeight: 900, fontSize: isMobile ? 12 : 14 }}>{c.dayNum}</div>
-                    {items.length > 0 ? (
-                      <div style={{ fontWeight: 900, color: "rgba(17,17,17,0.55)", fontSize: isMobile ? 11 : 12 }}>{items.length}</div>
-                    ) : null}
-                  </div>
+          .modalBody {
+            padding: 14px;
+          }
 
-                  {items.length ? (
-                    <div style={{ fontSize: isMobile ? 11 : 12, color: "rgba(17,17,17,0.62)", fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      • Entry
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: isMobile ? 11 : 12, color: "rgba(17,17,17,0.25)" }}>—</div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
+          .entryCard {
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 16px;
+            padding: 12px;
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+          }
 
-        {/* Day sheet */}
-        {selectedDayYMD && (
-          <div
-            onClick={() => setSelectedDayYMD(null)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.45)",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "flex-end",
-              padding: 10,
-              zIndex: 70,
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                background: "rgba(255,255,255,0.92)",
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
-                width: "min(900px, 100%)",
-                borderRadius: 20,
-                border: `1px solid ${UI.line}`,
-                boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
-                overflow: "hidden",
-                maxHeight: "88vh",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
+          .entryTitle {
+            font-weight: 980;
+            color: rgba(18, 19, 24, 0.92);
+          }
 
-              <div style={{ padding: 14, borderBottom: `1px solid ${UI.line}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          .entryMeta {
+            color: rgba(18, 19, 24, 0.65);
+            font-weight: 850;
+            font-size: 12px;
+            margin-top: 4px;
+          }
+
+          .miniBtn {
+            padding: 9px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+            background: rgba(0, 0, 0, 0.04);
+            font-weight: 950;
+            cursor: pointer;
+            color: rgba(18, 19, 24, 0.92);
+            white-space: nowrap;
+          }
+          .miniPrimary {
+            border: 1px solid rgba(255, 42, 58, 0.55);
+            background: ${UI.accent};
+            color: #fff;
+          }
+
+          .footerNote {
+            padding: 12px 14px;
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            color: rgba(18, 19, 24, 0.55);
+            font-weight: 850;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+        `}</style>
+
+        <div className="wrap" ref={topRef}>
+          {/* Quick add (LIGHT) */}
+          <div className="panel">
+            <div className="lightCard">
+              <div className="hTitle">
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 900 }}>Day entries</div>
-                  <div style={{ color: "rgba(17,17,17,0.62)", fontSize: 13, fontWeight: 800 }}>{selectedDayYMD}</div>
+                  Quick add{" "}
+                  {editingId ? (
+                    <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 950, color: "rgba(255,42,58,0.90)" }}>
+                      Editing entry
+                    </span>
+                  ) : null}
+                  <div className="hSub">Everything is stored locally in your browser (no account needed).</div>
                 </div>
 
-                <button
-                  onClick={() => setSelectedDayYMD(null)}
-                  style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
-                >
-                  Close
-                </button>
+                <div className="btnRow">
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      const d = new Date();
+                      setDateYMD(toYMD(d));
+                      setTimeHM(`${pad2(d.getHours())}:${pad2(d.getMinutes())}`);
+                    }}
+                    type="button"
+                  >
+                    Use now
+                  </button>
+
+                  <button className="btn btnPrimary" onClick={saveEntry} type="button">
+                    Save entry →
+                  </button>
+                </div>
               </div>
 
-              <div style={{ padding: 14, overflowY: "auto" }}>
-                {dayEntries.length === 0 ? (
-                  <div style={{ marginTop: 8, color: "rgba(17,17,17,0.62)", fontWeight: 800 }}>No health entries for this day.</div>
+              <div className="grid2">
+                <div>
+                  <label>Date</label>
+                  <input className="input" type="date" value={dateYMD} onChange={(e) => setDateYMD(e.target.value)} />
+                </div>
+                <div>
+                  <label>Time</label>
+                  <input className="input" type="time" value={timeHM} onChange={(e) => setTimeHM(e.target.value)} />
+                </div>
+
+                <div>
+                  <label>Weight (kg)</label>
+                  <input className="input" placeholder="e.g. 78.4" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} />
+                </div>
+                <div>
+                  <label>Resting HR (bpm)</label>
+                  <input className="input" placeholder="e.g. 62" value={restingHr} onChange={(e) => setRestingHr(e.target.value)} />
+                </div>
+
+                <div>
+                  <label>BP (sys)</label>
+                  <input className="input" placeholder="e.g. 120" value={bpSys} onChange={(e) => setBpSys(e.target.value)} />
+                </div>
+                <div>
+                  <label>BP (dia)</label>
+                  <input className="input" placeholder="e.g. 80" value={bpDia} onChange={(e) => setBpDia(e.target.value)} />
+                </div>
+              </div>
+
+              {/* Optional sections (simple + clean) */}
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                <details>
+                  <summary style={{ cursor: "pointer", fontWeight: 950, color: "rgba(18,19,24,0.82)" }}>
+                    Measurements (optional)
+                    <span style={{ marginLeft: 8, color: "rgba(18,19,24,0.55)", fontWeight: 850, fontSize: 12 }}>
+                      waist / hips / chest / arm / thigh
+                    </span>
+                  </summary>
+                  <div className="grid2" style={{ marginTop: 10 }}>
+                    <div>
+                      <label>Waist (cm)</label>
+                      <input className="input" value={waistCm} onChange={(e) => setWaistCm(e.target.value)} placeholder="e.g. 88" />
+                    </div>
+                    <div>
+                      <label>Hips (cm)</label>
+                      <input className="input" value={hipsCm} onChange={(e) => setHipsCm(e.target.value)} placeholder="e.g. 102" />
+                    </div>
+                    <div>
+                      <label>Chest (cm)</label>
+                      <input className="input" value={chestCm} onChange={(e) => setChestCm(e.target.value)} placeholder="e.g. 98" />
+                    </div>
+                    <div>
+                      <label>Arm (cm)</label>
+                      <input className="input" value={armCm} onChange={(e) => setArmCm(e.target.value)} placeholder="e.g. 31" />
+                    </div>
+                    <div>
+                      <label>Thigh (cm)</label>
+                      <input className="input" value={thighCm} onChange={(e) => setThighCm(e.target.value)} placeholder="e.g. 56" />
+                    </div>
+                  </div>
+                </details>
+
+                <details>
+                  <summary style={{ cursor: "pointer", fontWeight: 950, color: "rgba(18,19,24,0.82)" }}>
+                    Exercise (optional)
+                    <span style={{ marginLeft: 8, color: "rgba(18,19,24,0.55)", fontWeight: 850, fontSize: 12 }}>
+                      steps / minutes / intensity / type
+                    </span>
+                  </summary>
+                  <div className="grid2" style={{ marginTop: 10 }}>
+                    <div>
+                      <label>Steps</label>
+                      <input className="input" value={steps} onChange={(e) => setSteps(e.target.value)} placeholder="e.g. 8500" />
+                    </div>
+                    <div>
+                      <label>Workout minutes</label>
+                      <input className="input" value={workoutMin} onChange={(e) => setWorkoutMin(e.target.value)} placeholder="e.g. 30" />
+                    </div>
+                    <div>
+                      <label>Intensity</label>
+                      <select className="input" value={intensity} onChange={(e) => setIntensity(e.target.value as any)}>
+                        <option value="light">Light</option>
+                        <option value="moderate">Moderate</option>
+                        <option value="hard">Hard</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Type</label>
+                      <input className="input" value={workoutType} onChange={(e) => setWorkoutType(e.target.value)} placeholder="e.g. Walk, gym, run" />
+                    </div>
+                  </div>
+                </details>
+
+                <details>
+                  <summary style={{ cursor: "pointer", fontWeight: 950, color: "rgba(18,19,24,0.82)" }}>
+                    Notes (optional)
+                    <span style={{ marginLeft: 8, color: "rgba(18,19,24,0.55)", fontWeight: 850, fontSize: 12 }}>
+                      symptoms, sleep, appetite, mood…
+                    </span>
+                  </summary>
+                  <div style={{ marginTop: 10 }}>
+                    <label>Notes</label>
+                    <textarea className="input" style={{ minHeight: 90, resize: "vertical" }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+                  </div>
+                </details>
+              </div>
+
+              {editingId ? (
+                <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div className="hSub">Tip: save updates, or cancel to return to normal add mode.</div>
+                  <div className="btnRow">
+                    <button
+                      className="btn btnDanger"
+                      type="button"
+                      onClick={() => {
+                        setEditingId(null);
+                        resetFormKeepDateTime();
+                      }}
+                    >
+                      Cancel edit
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Calendar (LIGHT) */}
+          <div className="panel">
+            <div className="lightCard">
+              <div className="calHeader">
+                <div>
+                  <div style={{ fontWeight: 980, fontSize: 14 }}>History</div>
+                  <div className="hSub">Click a day to view entries (and edit).</div>
+                </div>
+
+                <div className="calControls">
+                  <button className="todayBtn" onClick={goToday} type="button">
+                    Today
+                  </button>
+                  <button className="iconBtn" onClick={prevMonth} aria-label="Previous month" type="button">
+                    ‹
+                  </button>
+                  <div className="monthPill">{monthLabel(month)}</div>
+                  <button className="iconBtn" onClick={nextMonth} aria-label="Next month" type="button">
+                    ›
+                  </button>
+                </div>
+              </div>
+
+              <div className="dowRow">
+                <div>{dayNameShort(0)}</div>
+                <div>{dayNameShort(1)}</div>
+                <div>{dayNameShort(2)}</div>
+                <div>{dayNameShort(3)}</div>
+                <div>{dayNameShort(4)}</div>
+                <div>{dayNameShort(5)}</div>
+                <div>{dayNameShort(6)}</div>
+              </div>
+
+              <div className="calGrid">
+                {cal.days.map((d) => {
+                  const ymd = toYMD(d);
+                  const inMonth = d.getMonth() === cal.mStart.getMonth();
+                  const isToday = ymd === todayYMD;
+
+                  const c = byDayCount[ymd] ?? 0;
+                  const alpha = c > 0 ? clamp(c / heatMax, 0, 1) : 0;
+
+                  // subtle “dashboard-ish” tint on light tiles (very gentle)
+                  const heatTint = c > 0 ? `rgba(255,42,58,${0.04 + alpha * 0.10})` : "rgba(0,0,0,0.00)";
+
+                  return (
+                    <button
+                      key={ymd}
+                      type="button"
+                      onClick={() => setSelectedYMD(ymd)}
+                      className={`dayBtn ${!inMonth ? "outside" : ""} ${isToday ? "todayRing" : ""}`}
+                      title={`${ymd}${c ? ` • ${c} entr${c === 1 ? "y" : "ies"}` : ""}`}
+                      style={{
+                        background: `linear-gradient(180deg, rgba(255,255,255,0.88) 0%, ${heatTint} 100%)`,
+                      }}
+                    >
+                      <div className="dayTop">
+                        <div className="dayNum">{d.getDate()}</div>
+                      </div>
+
+                      <div className="dotRow">
+                        {c > 0 ? <span className="dot" /> : <span style={{ opacity: 0.35 }}>—</span>}
+                        {c > 1 ? <span className="countBadge">{c}</span> : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: 12, color: "rgba(18,19,24,0.60)", fontWeight: 850, fontSize: 12 }}>
+                Tip: Click a day to see details and edit.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Center modal */}
+        {selectedYMD ? (
+          <GlassOverlay onClose={() => setSelectedYMD(null)} align="center">
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modalHeader">
+                <div>
+                  <div style={{ fontWeight: 980, fontSize: 16 }}>{selectedYMD}</div>
+                  <div className="hSub">{selectedEntries.length} health entr{selectedEntries.length === 1 ? "y" : "ies"}</div>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    className="miniBtn"
+                    type="button"
+                    onClick={() => {
+                      // “Add entry” = set date, jump to form
+                      setDateYMD(selectedYMD);
+                      setEditingId(null);
+                      resetFormKeepDateTime();
+                      setSelectedYMD(null);
+                      scrollToTopForm();
+                    }}
+                  >
+                    Add entry
+                  </button>
+                  <button className="miniBtn miniPrimary" type="button" onClick={() => setSelectedYMD(null)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div className="modalBody">
+                {selectedEntries.length === 0 ? (
+                  <div style={{ color: "rgba(18,19,24,0.65)", fontWeight: 900 }}>
+                    No entries saved on this day.
+                  </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {dayEntries.map((h) => (
-                      <div key={h.id} style={{ border: `1px solid ${UI.line}`, borderRadius: 16, padding: 12, background: "#fff" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                          <div style={{ fontWeight: 900 }}>
-                            {new Date(h.dateTimeISO).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  selectedEntries.map((e) => {
+                    const bp = e.bpSys || e.bpDia ? `${e.bpSys ?? "—"}/${e.bpDia ?? "—"}` : "—";
+                    return (
+                      <div key={e.id} className="entryCard">
+                        <div>
+                          <div className="entryTitle">
+                            Entry • {e.timeHM}
+                            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 900, color: "rgba(18,19,24,0.60)" }}>
+                              {String(e.createdAtISO).slice(0, 16).replace("T", " ")}
+                            </span>
                           </div>
-                          <button
-                            onClick={() => deleteEntry(h.id)}
-                            style={{ padding: "10px 12px", borderRadius: 999, border: `1px solid ${UI.line}`, background: "#fff", cursor: "pointer", fontWeight: 900, color: UI.ink }}
-                          >
+
+                          <div className="entryMeta">
+                            Weight: <b>{e.weightKg ? `${e.weightKg} kg` : "—"}</b> &nbsp;•&nbsp; HR:{" "}
+                            <b>{e.restingHr ? `${e.restingHr} bpm` : "—"}</b> &nbsp;•&nbsp; BP: <b>{bp}</b>
+                          </div>
+
+                          {e.notes ? <div className="entryMeta" style={{ marginTop: 8 }}>Notes: {e.notes}</div> : null}
+                        </div>
+
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                          <button className="miniBtn" type="button" onClick={() => startEdit(e)}>
+                            Edit
+                          </button>
+                          <button className="miniBtn" type="button" onClick={() => deleteEntry(e.id)}>
                             Delete
                           </button>
                         </div>
-
-                        <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", color: "rgba(17,17,17,0.72)", fontWeight: 800 }}>
-                          {h.weightKg ? (
-                            <div>
-                              ⚖️ <b style={{ color: UI.ink }}>{h.weightKg}kg</b>
-                            </div>
-                          ) : null}
-                          {h.restingHr ? (
-                            <div>
-                              ❤️ <b style={{ color: UI.ink }}>{h.restingHr} bpm</b>
-                            </div>
-                          ) : null}
-                          {h.bpSys && h.bpDia ? (
-                            <div>
-                              🩺 <b style={{ color: UI.ink }}>{h.bpSys}/{h.bpDia}</b>
-                            </div>
-                          ) : null}
-                          {h.exerciseMinutes ? (
-                            <div>
-                              🏃 <b style={{ color: UI.ink }}>{h.exerciseMinutes} min</b>
-                            </div>
-                          ) : null}
-                        </div>
-
-                        {h.notes ? <div style={{ marginTop: 8, color: "rgba(17,17,17,0.78)" }}>{h.notes}</div> : null}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })
                 )}
               </div>
+
+              <div className="footerNote">
+                For general informational use only. Verify measurements and follow professional guidance.
+              </div>
             </div>
-          </div>
-        )}
+          </GlassOverlay>
+        ) : null}
       </AppPage>
     </AppShell>
   );
