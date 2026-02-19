@@ -259,6 +259,19 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // ✅ Persist deletes/edits back to storage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.injectionLogs, JSON.stringify(logs));
+    } catch {}
+  }, [logs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.healthEntries, JSON.stringify(health));
+    } catch {}
+  }, [health]);
+
   const hasAnyData = useMemo(() => {
     return (routines?.length ?? 0) > 0 || (logs?.length ?? 0) > 0 || (health?.length ?? 0) > 0;
   }, [routines, logs, health]);
@@ -401,17 +414,52 @@ export default function DashboardPage() {
     return { primary: "close" as const };
   }, [selectedYMD, dayLogs.length, dayHealth.length, lowVials.length]);
 
+  // ✅ Delete helpers
+  function deleteLog(id: number) {
+    setLogs((prev) => prev.filter((x) => x.id !== id));
+  }
+
+  function deleteHealth(id: string) {
+    setHealth((prev) => prev.filter((x) => x.id !== id));
+  }
+
+  function clearSelectedDay() {
+    if (!selectedYMD) return;
+    const ymd = selectedYMD;
+
+    setLogs((prev) => prev.filter((l) => String(l.injectedAtISO ?? "").slice(0, 10) !== ymd));
+    setHealth((prev) => prev.filter((h) => ymdFromAnyHealth(h) !== ymd));
+  }
+
+  const dangerBtn: React.CSSProperties = {
+    padding: "9px 12px",
+    borderRadius: 999,
+    border: "1px solid rgba(225,6,0,0.28)",
+    background: "rgba(225,6,0,0.10)",
+    color: "rgba(0,0,0,0.82)",
+    cursor: "pointer",
+    fontWeight: 950,
+    boxShadow: "0 10px 22px rgba(0,0,0,0.12)",
+    whiteSpace: "nowrap",
+  };
+
+  const miniDanger: React.CSSProperties = {
+    padding: "8px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(225,6,0,0.26)",
+    background: "rgba(225,6,0,0.10)",
+    color: "rgba(0,0,0,0.82)",
+    cursor: "pointer",
+    fontWeight: 950,
+    boxShadow: "0 10px 18px rgba(0,0,0,0.10)",
+  };
+
   return (
     <AppShell title="Dashboard" subtitle="A clean overview of your routines, signals, and consistency.">
       <AppPage>
         <style jsx global>{`
-          .dashWrap {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-          }
+          .dashWrap { display: flex; flex-direction: column; gap: 14px; }
 
-          /* White “Health-style” card */
           .calCard {
             border-radius: 22px;
             background: rgba(255, 255, 255, 0.92);
@@ -421,156 +469,71 @@ export default function DashboardPage() {
             overflow: hidden;
           }
 
-          .calHeader {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 10px;
-          }
+          .calHeader { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+          .calTitle { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+          .calTitleText { font-weight:980; color:rgba(0,0,0,0.85); font-size:16px; }
+          .calSub { color:rgba(0,0,0,0.55); font-weight:850; font-size:12px; }
 
-          .calTitle {
-            display: flex;
-            align-items: baseline;
-            gap: 10px;
-            flex-wrap: wrap;
-          }
-
-          .calTitleText {
-            font-weight: 980;
-            color: rgba(0, 0, 0, 0.85);
-            font-size: 16px;
-          }
-
-          .calSub {
-            color: rgba(0, 0, 0, 0.55);
-            font-weight: 850;
-            font-size: 12px;
-          }
-
-          .calControls {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-          }
+          .calControls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 
           .iconBtn {
-            width: 36px;
-            height: 36px;
-            border-radius: 12px;
+            width: 36px; height: 36px; border-radius: 12px;
             border: 1px solid rgba(0, 0, 0, 0.10);
             background: rgba(255, 255, 255, 0.85);
-            cursor: pointer;
-            font-weight: 950;
-            color: rgba(0, 0, 0, 0.75);
+            cursor: pointer; font-weight: 950; color: rgba(0, 0, 0, 0.75);
             box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
           }
 
           .monthPill {
-            padding: 9px 12px;
-            border-radius: 14px;
+            padding: 9px 12px; border-radius: 14px;
             border: 1px solid rgba(0, 0, 0, 0.10);
             background: rgba(255, 255, 255, 0.85);
             color: rgba(0, 0, 0, 0.80);
-            font-weight: 950;
-            min-width: 180px;
-            text-align: center;
+            font-weight: 950; min-width: 180px; text-align: center;
             box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
           }
 
           .todayBtn {
-            padding: 9px 12px;
-            border-radius: 999px;
+            padding: 9px 12px; border-radius: 999px;
             border: 1px solid rgba(225, 6, 0, 0.25);
             background: rgba(225, 6, 0, 0.10);
             color: rgba(0, 0, 0, 0.78);
-            font-weight: 950;
-            cursor: pointer;
+            font-weight: 950; cursor: pointer;
             box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
           }
 
           .dowRow {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 10px;
-            margin-bottom: 10px;
-            color: rgba(0, 0, 0, 0.55);
-            font-weight: 900;
-            font-size: 12px;
+            display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 10px; margin-top: 10px; margin-bottom: 10px;
+            color: rgba(0, 0, 0, 0.55); font-weight: 900; font-size: 12px;
             padding: 0 4px;
           }
 
-          .grid {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(0, 1fr));
-            gap: 10px;
-          }
+          .grid { display:grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 
-          /* Light tiles like the other pages */
           .dayBtn {
-            text-align: left;
-            border-radius: 16px;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 245, 247, 0.98) 100%);
-            box-shadow: 0 12px 26px rgba(0, 0, 0, 0.12);
-            padding: 10px;
-            min-height: 72px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            cursor: pointer;
+            text-align:left; border-radius:16px;
+            border: 1px solid rgba(0,0,0,0.08);
+            background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(245,245,247,0.98) 100%);
+            box-shadow: 0 12px 26px rgba(0,0,0,0.12);
+            padding:10px; min-height:72px;
+            display:flex; flex-direction:column; justify-content:space-between;
+            cursor:pointer;
             transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
           }
+          .dayBtn:hover { transform: translateY(-1px); box-shadow: 0 16px 34px rgba(0,0,0,0.16); border-color: rgba(0,0,0,0.12); }
 
-          .dayBtn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
-            border-color: rgba(0, 0, 0, 0.12);
-          }
+          .dayNum { font-weight:980; color:rgba(0,0,0,0.82); font-size:14px; }
+          .outside { opacity: 0.45; }
+          .todayRing { box-shadow: 0 0 0 2px rgba(225, 6, 0, 0.16), 0 12px 26px rgba(0, 0, 0, 0.12); border-color: rgba(225, 6, 0, 0.22) !important; }
 
-          .dayNum {
-            font-weight: 980;
-            color: rgba(0, 0, 0, 0.82);
-            font-size: 14px;
-          }
-
-          .outside {
-            opacity: 0.45;
-          }
-
-          .todayRing {
-            box-shadow: 0 0 0 2px rgba(225, 6, 0, 0.16), 0 12px 26px rgba(0, 0, 0, 0.12);
-            border-color: rgba(225, 6, 0, 0.22) !important;
-          }
-
-          .dots {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            margin-top: 8px;
-          }
-
-          .dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 99px;
-            display: inline-block;
-          }
+          .dots { display:flex; align-items:center; gap:7px; margin-top:8px; }
+          .dot { width:10px; height:10px; border-radius:99px; display:inline-block; }
 
           .legend {
-            margin-top: 12px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(0, 0, 0, 0.08);
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            align-items: center;
-            color: rgba(0, 0, 0, 0.60);
-            font-weight: 850;
-            font-size: 12px;
+            margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.08);
+            display:flex; gap:12px; flex-wrap:wrap; align-items:center;
+            color: rgba(0,0,0,0.60); font-weight:850; font-size:12px;
           }
 
           .sheet {
@@ -593,21 +556,15 @@ export default function DashboardPage() {
             gap: 10px;
           }
 
-          .muted {
-            color: rgba(0, 0, 0, 0.55);
-            font-weight: 850;
-            font-size: 12px;
-          }
+          .muted { color: rgba(0,0,0,0.55); font-weight: 850; font-size: 12px; }
 
           .row {
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            padding: 10px 12px;
-            border: 1px solid rgba(0, 0, 0, 0.08);
+            display:flex; justify-content:space-between; gap:10px;
+            padding:10px 12px;
+            border: 1px solid rgba(0,0,0,0.08);
             border-radius: 14px;
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.10);
+            background: rgba(255,255,255,0.92);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.10);
             margin-top: 8px;
           }
 
@@ -622,16 +579,8 @@ export default function DashboardPage() {
             box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14);
           }
 
-          .section {
-            padding: 14px;
-            border-top: 1px solid rgba(0, 0, 0, 0.06);
-          }
-
-          .sectionTitle {
-            font-weight: 980;
-            color: rgba(0, 0, 0, 0.82);
-            margin-bottom: 8px;
-          }
+          .section { padding: 14px; border-top: 1px solid rgba(0,0,0,0.06); }
+          .sectionTitle { font-weight: 980; color: rgba(0,0,0,0.82); margin-bottom: 8px; }
 
           .quickRow {
             padding: 14px;
@@ -645,17 +594,9 @@ export default function DashboardPage() {
           }
 
           @media (max-width: 520px) {
-            .grid {
-              gap: 8px;
-            }
-            .dayBtn {
-              min-height: 66px;
-              padding: 9px;
-              border-radius: 14px;
-            }
-            .monthPill {
-              min-width: 150px;
-            }
+            .grid { gap: 8px; }
+            .dayBtn { min-height: 66px; padding: 9px; border-radius: 14px; }
+            .monthPill { min-width: 150px; }
           }
         `}</style>
 
@@ -668,16 +609,10 @@ export default function DashboardPage() {
               </div>
 
               <div className="calControls">
-                <button className="todayBtn" onClick={goToday}>
-                  Today
-                </button>
-                <button className="iconBtn" onClick={prevMonth} aria-label="Previous month">
-                  ‹
-                </button>
+                <button className="todayBtn" onClick={goToday}>Today</button>
+                <button className="iconBtn" onClick={prevMonth} aria-label="Previous month">‹</button>
                 <div className="monthPill">{monthLabel(month)}</div>
-                <button className="iconBtn" onClick={nextMonth} aria-label="Next month">
-                  ›
-                </button>
+                <button className="iconBtn" onClick={nextMonth} aria-label="Next month">›</button>
               </div>
             </div>
 
@@ -705,11 +640,7 @@ export default function DashboardPage() {
 
                 const score = heatByDay[ymd] ?? 0;
                 const alpha = hasAnyData ? clamp(score / heatMax, 0, 1) : 0;
-
-                // soft red heat wash at the bottom of tile
-                const heatTint = hasAnyData
-                  ? `rgba(225,6,0,${0.04 + alpha * 0.14})`
-                  : "rgba(225,6,0,0.00)";
+                const heatTint = hasAnyData ? `rgba(225,6,0,${0.04 + alpha * 0.14})` : "rgba(225,6,0,0.00)";
 
                 return (
                   <button
@@ -718,10 +649,7 @@ export default function DashboardPage() {
                     onClick={() => setSelectedYMD(ymd)}
                     className={`dayBtn ${!inMonth ? "outside" : ""} ${isToday ? "todayRing" : ""}`}
                     title={`${ymd}\nActivity: ${inj}\nHealth: ${h}${hasAnyData ? `\nPredicted: ${pred}` : ""}`}
-                    style={{
-                      outline: "none",
-                      background: `linear-gradient(180deg, rgba(255,255,255,0.98) 0%, ${heatTint} 100%)`,
-                    }}
+                    style={{ outline: "none", background: `linear-gradient(180deg, rgba(255,255,255,0.98) 0%, ${heatTint} 100%)` }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                       <div className="dayNum">{d.getDate()}</div>
@@ -776,20 +704,30 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <button
-                  className="closeBtn"
-                  onClick={() => setSelectedYMD(null)}
-                  style={{
-                    background: cta.primary === "close" ? UI.accent : "rgba(0,0,0,0.06)",
-                    color: cta.primary === "close" ? "#fff" : "rgba(0,0,0,0.80)",
-                    border:
-                      cta.primary === "close"
-                        ? "1px solid rgba(225,6,0,0.30)"
-                        : "1px solid rgba(0,0,0,0.10)",
-                  }}
-                >
-                  Close
-                </button>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={clearSelectedDay}
+                    style={dangerBtn}
+                    title="Removes all activity + health entries for this day (local-only)"
+                  >
+                    Clear day
+                  </button>
+
+                  <button
+                    className="closeBtn"
+                    onClick={() => setSelectedYMD(null)}
+                    style={{
+                      background: cta.primary === "close" ? UI.accent : "rgba(0,0,0,0.06)",
+                      color: cta.primary === "close" ? "#fff" : "rgba(0,0,0,0.80)",
+                      border:
+                        cta.primary === "close"
+                          ? "1px solid rgba(225,6,0,0.30)"
+                          : "1px solid rgba(0,0,0,0.10)",
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
               <div className="quickRow">
@@ -842,7 +780,10 @@ export default function DashboardPage() {
                         </div>
                         {l.notes ? <div className="muted" style={{ marginTop: 6 }}>{l.notes}</div> : null}
                       </div>
-                      <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.55)" }}>●</div>
+
+                      <button onClick={() => deleteLog(l.id)} style={miniDanger} title="Delete this activity entry">
+                        Delete
+                      </button>
                     </div>
                   ))
                 )}
@@ -861,7 +802,10 @@ export default function DashboardPage() {
                           {String(h.createdAtISO ?? h.dateYMD ?? h.ymd ?? h.date ?? "—").slice(0, 16)}
                         </div>
                       </div>
-                      <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.55)" }}>◻︎</div>
+
+                      <button onClick={() => deleteHealth(h.id)} style={miniDanger} title="Delete this health entry">
+                        Delete
+                      </button>
                     </div>
                   ))
                 )}
