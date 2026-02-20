@@ -50,6 +50,15 @@ export function GlassOverlay({
   align?: "center" | "bottom";
   children: React.ReactNode;
 }) {
+  // ✅ Stop background scroll while overlay is open (mobile polish)
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   return (
     <div
       onClick={onClose}
@@ -64,6 +73,7 @@ export function GlassOverlay({
         alignItems: align === "bottom" ? "flex-end" : "center",
         justifyContent: "center",
         padding: 14,
+        paddingBottom: `calc(14px + env(safe-area-inset-bottom))`,
       }}
     >
       {children}
@@ -72,11 +82,7 @@ export function GlassOverlay({
 }
 
 export function AppPage({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      {children}
-    </div>
-  );
+  return <div style={{ maxWidth: 1200, margin: "0 auto" }}>{children}</div>;
 }
 
 function useIsMobile(breakpoint = 980) {
@@ -142,7 +148,6 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             flex: "0 0 auto",
           }}
         >
-          {/* If you have a logo in /public/icons/icon-192.png */}
           <img
             src="/icons/icon-192.png"
             alt="HelixX"
@@ -151,9 +156,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
 
         <div style={{ lineHeight: 1.15 }}>
-          <div style={{ fontWeight: 980, fontSize: 15, color: UI.inkOnDark }}>
-            HelixX
-          </div>
+          <div style={{ fontWeight: 980, fontSize: 15, color: UI.inkOnDark }}>HelixX</div>
           <div style={{ marginTop: 2, fontWeight: 850, fontSize: 11, color: UI.mutedOnDark }}>
             Precision tracking intelligence
           </div>
@@ -173,7 +176,8 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 textDecoration: "none",
                 color: UI.inkOnDark,
                 fontWeight: 920,
-                padding: "11px 12px",
+                padding: "12px 12px",
+                minHeight: 44,
                 borderRadius: 14,
                 border: active ? `1px solid ${UI.accentLine}` : `1px solid ${UI.lineOnDark}`,
                 background: active
@@ -239,11 +243,32 @@ export function AppShell({
     document.body.style.color = UI.inkOnDark;
   }, []);
 
+  // ✅ Register service worker for PWA (safe: only runs in browser + if supported)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator)) return;
+
+    const register = async () => {
+      try {
+        await navigator.serviceWorker.register("/sw.js");
+      } catch {
+        // no-op (don’t crash the app if SW fails)
+      }
+    };
+
+    // slight delay avoids fighting initial hydration
+    const t = window.setTimeout(register, 400);
+    return () => window.clearTimeout(t);
+  }, []);
+
   return (
     <main
       style={{
         minHeight: "100vh",
-        padding: "18px 18px 28px",
+        padding: isMobile ? "14px 12px 22px" : "18px 18px 28px",
+        paddingBottom: isMobile
+          ? `calc(22px + env(safe-area-inset-bottom))`
+          : "28px",
         background:
           `radial-gradient(880px 520px at 16% 18%, rgba(225,6,0,0.16) 0%, rgba(225,6,0,0.06) 28%, rgba(0,0,0,0) 62%),` +
           `radial-gradient(900px 620px at 84% 12%, rgba(255,42,42,0.10) 0%, rgba(0,0,0,0) 58%),` +
@@ -252,13 +277,14 @@ export function AppShell({
       }}
     >
       <AppPage>
-        {/* Header (light card like Dashboard) */}
+        {/* Header */}
         <div
           style={{
             border: `1px solid rgba(255,255,255,0.10)`,
             borderRadius: 22,
-            padding: 14,
-            background: "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)",
+            padding: isMobile ? 12 : 14,
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)",
             boxShadow: UI.shadow,
             display: "flex",
             justifyContent: "space-between",
@@ -270,7 +296,14 @@ export function AppShell({
           }}
         >
           <div style={{ minWidth: 220 }}>
-            <div style={{ fontSize: 28, fontWeight: 950, color: UI.inkOnDark, letterSpacing: -0.2 }}>
+            <div
+              style={{
+                fontSize: isMobile ? 24 : 28,
+                fontWeight: 950,
+                color: UI.inkOnDark,
+                letterSpacing: -0.2,
+              }}
+            >
               {title}
             </div>
             {subtitle ? (
@@ -285,6 +318,7 @@ export function AppShell({
               onClick={() => setMenuOpen(true)}
               style={{
                 padding: "10px 12px",
+                minHeight: 44,
                 borderRadius: 999,
                 border: `1px solid rgba(255,255,255,0.14)`,
                 background: "rgba(255,255,255,0.06)",
@@ -320,25 +354,40 @@ export function AppShell({
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: "min(720px, 100%)",
+                maxHeight: "82vh",
+                overflow: "auto",
                 background: "rgba(21,21,24,0.92)",
                 border: `1px solid rgba(255,255,255,0.12)`,
                 borderRadius: 22,
                 boxShadow: "0 24px 70px rgba(0,0,0,0.40)",
-                overflow: "hidden",
                 backdropFilter: "blur(14px)",
                 WebkitBackdropFilter: "blur(14px)",
               }}
             >
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(255,255,255,0.18)", margin: "10px auto 0" }} />
+              <div
+                style={{
+                  width: 44,
+                  height: 5,
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,0.18)",
+                  margin: "10px auto 0",
+                }}
+              />
 
               <div
                 style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 2,
                   padding: 14,
                   borderBottom: `1px solid rgba(255,255,255,0.10)`,
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   gap: 10,
+                  background: "rgba(21,21,24,0.92)",
+                  backdropFilter: "blur(14px)",
+                  WebkitBackdropFilter: "blur(14px)",
                 }}
               >
                 <div style={{ fontWeight: 950, fontSize: 16, color: UI.inkOnDark }}>Menu</div>
@@ -347,6 +396,7 @@ export function AppShell({
                   onClick={() => setMenuOpen(false)}
                   style={{
                     padding: "10px 12px",
+                    minHeight: 44,
                     borderRadius: 999,
                     border: `1px solid ${UI.accentLine}`,
                     background: UI.accent,
@@ -362,6 +412,8 @@ export function AppShell({
               <div style={{ padding: 12 }}>
                 <Sidebar onNavigate={() => setMenuOpen(false)} />
               </div>
+
+              <div style={{ height: 12 }} />
             </div>
           </GlassOverlay>
         ) : null}

@@ -2,14 +2,13 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Helix X",
-    short_name: "Helix",
-    description: "Helix X Protocol Tracker",
-    start_url: "/",
+    name: "HelixX",
+    short_name: "HelixX",
+    description: "Precision tracking intelligence",
+    start_url: "/dashboard",
     display: "standalone",
-    background_color: "#070707",
-    theme_color: "#070707",
-
+    background_color: "#0B0B0D",
+    theme_color: "#0B0B0D",
     icons: [
       {
         src: "/icons/icon-192.png",
@@ -22,7 +21,7 @@ export default function manifest(): MetadataRoute.Manifest {
         type: "image/png",
       },
       {
-        src: "/icons/icon-maskable.png",
+        src: "/icons/icon-512-maskable.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

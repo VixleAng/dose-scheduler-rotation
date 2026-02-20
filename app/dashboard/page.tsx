@@ -178,7 +178,7 @@ function QuickPill({
     borderRadius: 999,
     fontWeight: 950,
     cursor: "pointer",
-    minHeight: 42,
+    minHeight: 44,
     gap: 8,
     boxShadow: "0 10px 22px rgba(0,0,0,0.12)",
   };
@@ -432,7 +432,8 @@ export default function DashboardPage() {
   }
 
   const dangerBtn: React.CSSProperties = {
-    padding: "9px 12px",
+    padding: "10px 12px",
+    minHeight: 44,
     borderRadius: 999,
     border: "1px solid rgba(225,6,0,0.28)",
     background: "rgba(225,6,0,0.10)",
@@ -444,7 +445,8 @@ export default function DashboardPage() {
   };
 
   const miniDanger: React.CSSProperties = {
-    padding: "8px 10px",
+    padding: "9px 12px",
+    minHeight: 44,
     borderRadius: 999,
     border: "1px solid rgba(225,6,0,0.26)",
     background: "rgba(225,6,0,0.10)",
@@ -455,7 +457,10 @@ export default function DashboardPage() {
   };
 
   return (
-    <AppShell title="Dashboard" subtitle="A clean overview of your routines, signals, and consistency.">
+    <AppShell
+      title="Dashboard"
+      subtitle="A clean overview of your routines, signals, and consistency."
+    >
       <AppPage>
         <style jsx global>{`
           .dashWrap { display: flex; flex-direction: column; gap: 14px; }
@@ -477,7 +482,7 @@ export default function DashboardPage() {
           .calControls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 
           .iconBtn {
-            width: 36px; height: 36px; border-radius: 12px;
+            width: 40px; height: 40px; border-radius: 12px;
             border: 1px solid rgba(0, 0, 0, 0.10);
             background: rgba(255, 255, 255, 0.85);
             cursor: pointer; font-weight: 950; color: rgba(0, 0, 0, 0.75);
@@ -485,7 +490,7 @@ export default function DashboardPage() {
           }
 
           .monthPill {
-            padding: 9px 12px; border-radius: 14px;
+            padding: 10px 12px; border-radius: 14px;
             border: 1px solid rgba(0, 0, 0, 0.10);
             background: rgba(255, 255, 255, 0.85);
             color: rgba(0, 0, 0, 0.80);
@@ -494,12 +499,13 @@ export default function DashboardPage() {
           }
 
           .todayBtn {
-            padding: 9px 12px; border-radius: 999px;
+            padding: 10px 12px; border-radius: 999px;
             border: 1px solid rgba(225, 6, 0, 0.25);
             background: rgba(225, 6, 0, 0.10);
             color: rgba(0, 0, 0, 0.78);
             font-weight: 950; cursor: pointer;
             box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+            min-height: 44px;
           }
 
           .dowRow {
@@ -520,6 +526,7 @@ export default function DashboardPage() {
             display:flex; flex-direction:column; justify-content:space-between;
             cursor:pointer;
             transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+            touch-action: manipulation;
           }
           .dayBtn:hover { transform: translateY(-1px); box-shadow: 0 16px 34px rgba(0,0,0,0.16); border-color: rgba(0,0,0,0.12); }
 
@@ -536,6 +543,7 @@ export default function DashboardPage() {
             color: rgba(0,0,0,0.60); font-weight:850; font-size:12px;
           }
 
+          /* ✅ Mobile sheet improvements: fixed max-height + internal scrolling + sticky header */
           .sheet {
             width: min(860px, 100%);
             background: rgba(255, 255, 255, 0.96);
@@ -545,6 +553,9 @@ export default function DashboardPage() {
             border-radius: 20px;
             box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
             overflow: hidden;
+            max-height: 82vh;
+            display: flex;
+            flex-direction: column;
           }
 
           .sheetHeader {
@@ -554,6 +565,17 @@ export default function DashboardPage() {
             justify-content: space-between;
             align-items: center;
             gap: 10px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: rgba(255,255,255,0.96);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+          }
+
+          .sheetBody {
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
           }
 
           .muted { color: rgba(0,0,0,0.55); font-weight: 850; font-size: 12px; }
@@ -570,6 +592,7 @@ export default function DashboardPage() {
 
           .closeBtn {
             padding: 10px 12px;
+            min-height: 44px;
             border-radius: 999px;
             border: 1px solid rgba(225, 6, 0, 0.30);
             background: ${UI.accent};
@@ -609,10 +632,16 @@ export default function DashboardPage() {
               </div>
 
               <div className="calControls">
-                <button className="todayBtn" onClick={goToday}>Today</button>
-                <button className="iconBtn" onClick={prevMonth} aria-label="Previous month">‹</button>
+                <button className="todayBtn" onClick={goToday}>
+                  Today
+                </button>
+                <button className="iconBtn" onClick={prevMonth} aria-label="Previous month">
+                  ‹
+                </button>
                 <div className="monthPill">{monthLabel(month)}</div>
-                <button className="iconBtn" onClick={nextMonth} aria-label="Next month">›</button>
+                <button className="iconBtn" onClick={nextMonth} aria-label="Next month">
+                  ›
+                </button>
               </div>
             </div>
 
@@ -649,7 +678,10 @@ export default function DashboardPage() {
                     onClick={() => setSelectedYMD(ymd)}
                     className={`dayBtn ${!inMonth ? "outside" : ""} ${isToday ? "todayRing" : ""}`}
                     title={`${ymd}\nActivity: ${inj}\nHealth: ${h}${hasAnyData ? `\nPredicted: ${pred}` : ""}`}
-                    style={{ outline: "none", background: `linear-gradient(180deg, rgba(255,255,255,0.98) 0%, ${heatTint} 100%)` }}
+                    style={{
+                      outline: "none",
+                      background: `linear-gradient(180deg, rgba(255,255,255,0.98) 0%, ${heatTint} 100%)`,
+                    }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                       <div className="dayNum">{d.getDate()}</div>
@@ -692,7 +724,15 @@ export default function DashboardPage() {
         {selectedYMD ? (
           <GlassOverlay onClose={() => setSelectedYMD(null)} align="bottom">
             <div className="sheet" onClick={(e) => e.stopPropagation()}>
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(0,0,0,0.14)", margin: "10px auto 0" }} />
+              <div
+                style={{
+                  width: 44,
+                  height: 5,
+                  borderRadius: 999,
+                  background: "rgba(0,0,0,0.14)",
+                  margin: "10px auto 0",
+                }}
+              />
 
               <div className="sheetHeader">
                 <div>
@@ -705,11 +745,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <button
-                    onClick={clearSelectedDay}
-                    style={dangerBtn}
-                    title="Removes all activity + health entries for this day (local-only)"
-                  >
+                  <button onClick={clearSelectedDay} style={dangerBtn} title="Removes all activity + health entries for this day (local-only)">
                     Clear day
                   </button>
 
@@ -730,128 +766,139 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="quickRow">
-                <QuickPill
-                  href="/tracker"
-                  label="Go to Tracker"
-                  badge={dayLogs.length === 0 ? "Missing" : dayLogs.length ? `${dayLogs.length} logged` : undefined}
-                  tone={cta.primary === "tracker" ? "primary" : "neutral"}
-                  onTap={() => setSelectedYMD(null)}
-                />
+              <div className="sheetBody">
+                <div className="quickRow">
+                  <QuickPill
+                    href="/tracker"
+                    label="Go to Tracker"
+                    badge={dayLogs.length === 0 ? "Missing" : dayLogs.length ? `${dayLogs.length} logged` : undefined}
+                    tone={cta.primary === "tracker" ? "primary" : "neutral"}
+                    onTap={() => setSelectedYMD(null)}
+                  />
 
-                <QuickPill
-                  href="/health"
-                  label="Go to Health"
-                  badge={dayHealth.length === 0 ? "Missing" : dayHealth.length ? `${dayHealth.length} logged` : undefined}
-                  tone={cta.primary === "health" ? "primary" : "neutral"}
-                  onTap={() => setSelectedYMD(null)}
-                />
+                  <QuickPill
+                    href="/health"
+                    label="Go to Health"
+                    badge={dayHealth.length === 0 ? "Missing" : dayHealth.length ? `${dayHealth.length} logged` : undefined}
+                    tone={cta.primary === "health" ? "primary" : "neutral"}
+                    onTap={() => setSelectedYMD(null)}
+                  />
 
-                <QuickPill
-                  href="/vials"
-                  label={lowVials.length ? "⚠️ Go to Stock" : "Go to Stock"}
-                  badge={lowVials.length ? `${lowVials.length} alert${lowVials.length === 1 ? "" : "s"}` : undefined}
-                  tone={cta.primary === "stock" ? "primary" : lowVials.length ? "warn" : "neutral"}
-                  onTap={() => setSelectedYMD(null)}
-                />
+                  <QuickPill
+                    href="/vials"
+                    label={lowVials.length ? "⚠️ Go to Stock" : "Go to Stock"}
+                    badge={lowVials.length ? `${lowVials.length} alert${lowVials.length === 1 ? "" : "s"}` : undefined}
+                    tone={cta.primary === "stock" ? "primary" : lowVials.length ? "warn" : "neutral"}
+                    onTap={() => setSelectedYMD(null)}
+                  />
 
-                <QuickPill
-                  href="/calculator"
-                  label="Calculator"
-                  badge={hasAnyData && dayPredCount > 0 ? `+${dayPredCount} pred` : undefined}
-                  tone="neutral"
-                  onTap={() => setSelectedYMD(null)}
-                />
-              </div>
+                  <QuickPill
+                    href="/calculator"
+                    label="Calculator"
+                    badge={hasAnyData && dayPredCount > 0 ? `+${dayPredCount} pred` : undefined}
+                    tone="neutral"
+                    onTap={() => setSelectedYMD(null)}
+                  />
+                </div>
 
-              <div className="section">
-                <div className="sectionTitle">Activity</div>
-                {dayLogs.length === 0 ? (
-                  <div className="muted">No activity logged this day.</div>
-                ) : (
-                  dayLogs.map((l) => (
-                    <div key={l.id} className="row">
+                <div className="section">
+                  <div className="sectionTitle">Activity</div>
+                  {dayLogs.length === 0 ? (
+                    <div className="muted">No activity logged this day.</div>
+                  ) : (
+                    dayLogs.map((l) => (
+                      <div key={l.id} className="row">
+                        <div>
+                          <div style={{ fontWeight: 980, color: "rgba(0,0,0,0.82)" }}>
+                            {l.routineName ?? "Routine"} {l.spotLabel ? `• ${l.spotLabel}` : ""}
+                          </div>
+                          <div className="muted">
+                            {String(l.injectedAtISO ?? "").replace("T", " ").slice(0, 16)} • {fmtDose(l.doseMg)}
+                          </div>
+                          {l.notes ? <div className="muted" style={{ marginTop: 6 }}>{l.notes}</div> : null}
+                        </div>
+
+                        <button onClick={() => deleteLog(l.id)} style={miniDanger} title="Delete this activity entry">
+                          Delete
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="section">
+                  <div className="sectionTitle">Health</div>
+                  {dayHealth.length === 0 ? (
+                    <div className="muted">No health entries logged this day.</div>
+                  ) : (
+                    dayHealth.map((h) => (
+                      <div key={h.id} className="row">
+                        <div>
+                          <div style={{ fontWeight: 980, color: "rgba(0,0,0,0.82)" }}>Health entry</div>
+                          <div className="muted">
+                            {String(h.createdAtISO ?? h.dateYMD ?? h.ymd ?? h.date ?? "—").slice(0, 16)}
+                          </div>
+                        </div>
+
+                        <button onClick={() => deleteHealth(h.id)} style={miniDanger} title="Delete this health entry">
+                          Delete
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="section">
+                  <div className="sectionTitle">Predicted</div>
+                  {!hasAnyData ? (
+                    <div className="muted">Predictions appear once you’ve added routines / logs.</div>
+                  ) : dayPredCount <= 0 ? (
+                    <div className="muted">No predicted activity for this day.</div>
+                  ) : (
+                    <div className="row">
                       <div>
                         <div style={{ fontWeight: 980, color: "rgba(0,0,0,0.82)" }}>
-                          {l.routineName ?? "Routine"} {l.spotLabel ? `• ${l.spotLabel}` : ""}
+                          {dayPredCount} predicted item{dayPredCount === 1 ? "" : "s"}
                         </div>
-                        <div className="muted">
-                          {String(l.injectedAtISO ?? "").replace("T", " ").slice(0, 16)} • {fmtDose(l.doseMg)}
+                        <div className="muted">Based on your routine frequency and recent logs.</div>
+                      </div>
+                      <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.55)" }}>✦</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="section">
+                  <div className="sectionTitle">Stock alerts</div>
+                  {lowVials.length === 0 ? (
+                    <div className="muted">No low-stock items detected.</div>
+                  ) : (
+                    lowVials.map((x) => (
+                      <div key={x.vialId} className="row">
+                        <div>
+                          <div style={{ fontWeight: 980, color: "rgba(0,0,0,0.82)" }}>⚠️ Low stock: {x.vialName}</div>
+                          <div className="muted">
+                            {x.routineName ? `${x.routineName} • ` : ""}
+                            ~{clamp(x.shotsLeft ?? 0, 0, 999).toFixed(1)} left • {x.remainingMg.toFixed(1)} mg remaining
+                          </div>
                         </div>
-                        {l.notes ? <div className="muted" style={{ marginTop: 6 }}>{l.notes}</div> : null}
+                        <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.55)" }}>🧪</div>
                       </div>
+                    ))
+                  )}
+                </div>
 
-                      <button onClick={() => deleteLog(l.id)} style={miniDanger} title="Delete this activity entry">
-                        Delete
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="section">
-                <div className="sectionTitle">Health</div>
-                {dayHealth.length === 0 ? (
-                  <div className="muted">No health entries logged this day.</div>
-                ) : (
-                  dayHealth.map((h) => (
-                    <div key={h.id} className="row">
-                      <div>
-                        <div style={{ fontWeight: 980, color: "rgba(0,0,0,0.82)" }}>Health entry</div>
-                        <div className="muted">
-                          {String(h.createdAtISO ?? h.dateYMD ?? h.ymd ?? h.date ?? "—").slice(0, 16)}
-                        </div>
-                      </div>
-
-                      <button onClick={() => deleteHealth(h.id)} style={miniDanger} title="Delete this health entry">
-                        Delete
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="section">
-                <div className="sectionTitle">Predicted</div>
-                {!hasAnyData ? (
-                  <div className="muted">Predictions appear once you’ve added routines / logs.</div>
-                ) : dayPredCount <= 0 ? (
-                  <div className="muted">No predicted activity for this day.</div>
-                ) : (
-                  <div className="row">
-                    <div>
-                      <div style={{ fontWeight: 980, color: "rgba(0,0,0,0.82)" }}>
-                        {dayPredCount} predicted item{dayPredCount === 1 ? "" : "s"}
-                      </div>
-                      <div className="muted">Based on your routine frequency and recent logs.</div>
-                    </div>
-                    <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.55)" }}>✦</div>
-                  </div>
-                )}
-              </div>
-
-              <div className="section">
-                <div className="sectionTitle">Stock alerts</div>
-                {lowVials.length === 0 ? (
-                  <div className="muted">No low-stock items detected.</div>
-                ) : (
-                  lowVials.map((x) => (
-                    <div key={x.vialId} className="row">
-                      <div>
-                        <div style={{ fontWeight: 980, color: "rgba(0,0,0,0.82)" }}>⚠️ Low stock: {x.vialName}</div>
-                        <div className="muted">
-                          {x.routineName ? `${x.routineName} • ` : ""}
-                          ~{clamp(x.shotsLeft ?? 0, 0, 999).toFixed(1)} left • {x.remainingMg.toFixed(1)} mg remaining
-                        </div>
-                      </div>
-                      <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.55)" }}>🧪</div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div style={{ padding: 14, color: "rgba(0,0,0,0.55)", fontWeight: 850, fontSize: 12, lineHeight: 1.4 }}>
-                For general informational use only. Verify measurements and follow professional guidance.
+                <div
+                  style={{
+                    padding: 14,
+                    paddingBottom: `calc(14px + env(safe-area-inset-bottom))`,
+                    color: "rgba(0,0,0,0.55)",
+                    fontWeight: 850,
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  For general informational use only. Verify measurements and follow professional guidance.
+                </div>
               </div>
             </div>
           </GlassOverlay>

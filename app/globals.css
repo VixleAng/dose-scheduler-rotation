@@ -14,8 +14,25 @@ body {
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji";
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
 }
 
+/* Links inherit nicely */
 a {
   color: inherit;
+}
+
+/* Prevent weird overscroll bounce fighting overlays on mobile */
+html {
+  overscroll-behavior-y: none;
+}
+
+/* Handy utility classes you can reuse */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
 }
