@@ -91,14 +91,22 @@ export function AppPage({ children }: { children: React.ReactNode }) {
 }
 
 function useIsMobile(breakpoint = 980) {
+  const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
+
     const check = () => setIsMobile(window.innerWidth <= breakpoint);
     check();
+
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, [breakpoint]);
-  return isMobile;
+
+  // ✅ During SSR + initial hydration, always behave like desktop.
+  // After mount, we can safely flip to true on mobile without mismatch.
+  return mounted ? isMobile : false;
 }
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -242,6 +250,10 @@ export function AppShell({
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
 
+  // ✅ NEW: mounted gate for hydration safety
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // App background (single source of truth)
   useEffect(() => {
     document.body.style.background = UI.bg;
@@ -351,7 +363,7 @@ export function AppShell({
         </div>
 
         {/* Mobile menu */}
-        {isMobile && menuOpen ? (
+        {mounted && isMobile && menuOpen ? (
           <GlassOverlay onClose={() => setMenuOpen(false)} align="bottom">
             <div
               onClick={(e) => e.stopPropagation()}
