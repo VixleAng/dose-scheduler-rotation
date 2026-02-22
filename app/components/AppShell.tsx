@@ -52,10 +52,15 @@ export function GlassOverlay({
 }) {
   // ✅ Stop background scroll while overlay is open (mobile polish)
   useEffect(() => {
-    const prev = document.body.style.overflow;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouch = (document.body.style as any).touchAction;
+
     document.body.style.overflow = "hidden";
+    (document.body.style as any).touchAction = "none";
+
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevOverflow;
+      (document.body.style as any).touchAction = prevTouch;
     };
   }, []);
 
@@ -67,8 +72,8 @@ export function GlassOverlay({
         inset: 0,
         zIndex: 50,
         background: "rgba(0,0,0,0.55)",
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
         display: "flex",
         alignItems: align === "bottom" ? "flex-end" : "center",
         justifyContent: "center",
@@ -235,6 +240,7 @@ export function AppShell({
 }) {
   const isMobile = useIsMobile(980);
   const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname();
 
   // App background (single source of truth)
   useEffect(() => {
@@ -243,32 +249,18 @@ export function AppShell({
     document.body.style.color = UI.inkOnDark;
   }, []);
 
-  // ✅ Register service worker for PWA (safe: only runs in browser + if supported)
+  // ✅ Close menu if route changes (mobile polish)
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator)) return;
-
-    const register = async () => {
-      try {
-        await navigator.serviceWorker.register("/sw.js");
-      } catch {
-        // no-op (don’t crash the app if SW fails)
-      }
-    };
-
-    // slight delay avoids fighting initial hydration
-    const t = window.setTimeout(register, 400);
-    return () => window.clearTimeout(t);
-  }, []);
+    if (menuOpen) setMenuOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   return (
     <main
       style={{
         minHeight: "100vh",
-        padding: isMobile ? "14px 12px 22px" : "18px 18px 28px",
-        paddingBottom: isMobile
-          ? `calc(22px + env(safe-area-inset-bottom))`
-          : "28px",
+        padding: isMobile ? "12px 12px 22px" : "18px 18px 28px",
+        paddingBottom: isMobile ? `calc(22px + env(safe-area-inset-bottom))` : "28px",
         background:
           `radial-gradient(880px 520px at 16% 18%, rgba(225,6,0,0.16) 0%, rgba(225,6,0,0.06) 28%, rgba(0,0,0,0) 62%),` +
           `radial-gradient(900px 620px at 84% 12%, rgba(255,42,42,0.10) 0%, rgba(0,0,0,0) 58%),` +
@@ -277,37 +269,48 @@ export function AppShell({
       }}
     >
       <AppPage>
-        {/* Header */}
+        {/* Header (smaller + NOT sticky on mobile) */}
         <div
           style={{
             border: `1px solid rgba(255,255,255,0.10)`,
-            borderRadius: 22,
-            padding: isMobile ? 12 : 14,
+            borderRadius: 18,
+            padding: isMobile ? 10 : 14,
             background:
               "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)",
             boxShadow: UI.shadow,
             display: "flex",
             justifyContent: "space-between",
-            gap: 12,
+            gap: 10,
             flexWrap: "wrap",
             alignItems: "center",
             backdropFilter: "blur(12px)",
             WebkitBackdropFilter: "blur(12px)",
           }}
         >
-          <div style={{ minWidth: 220 }}>
+          <div style={{ minWidth: isMobile ? 0 : 220 }}>
             <div
               style={{
-                fontSize: isMobile ? 24 : 28,
+                fontSize: isMobile ? 20 : 28,
                 fontWeight: 950,
                 color: UI.inkOnDark,
                 letterSpacing: -0.2,
+                lineHeight: 1.05,
               }}
             >
               {title}
             </div>
+
             {subtitle ? (
-              <div style={{ marginTop: 6, color: UI.mutedOnDark, fontWeight: 800 }}>
+              <div
+                style={{
+                  marginTop: 4,
+                  color: UI.mutedOnDark,
+                  fontWeight: 800,
+                  fontSize: isMobile ? 12 : 14,
+                  lineHeight: 1.25,
+                  maxWidth: 720,
+                }}
+              >
                 {subtitle}
               </div>
             ) : null}
@@ -317,8 +320,8 @@ export function AppShell({
             <button
               onClick={() => setMenuOpen(true)}
               style={{
-                padding: "10px 12px",
-                minHeight: 44,
+                padding: "9px 12px",
+                minHeight: 40,
                 borderRadius: 999,
                 border: `1px solid rgba(255,255,255,0.14)`,
                 background: "rgba(255,255,255,0.06)",
@@ -336,7 +339,7 @@ export function AppShell({
         {/* Layout */}
         <div
           style={{
-            marginTop: 14,
+            marginTop: 12,
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr" : "290px 1fr",
             gap: 14,
@@ -354,14 +357,16 @@ export function AppShell({
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: "min(720px, 100%)",
-                maxHeight: "82vh",
-                overflow: "auto",
+                maxHeight: `calc(86vh - env(safe-area-inset-top))`,
+                overflow: "hidden",
                 background: "rgba(21,21,24,0.92)",
                 border: `1px solid rgba(255,255,255,0.12)`,
                 borderRadius: 22,
                 boxShadow: "0 24px 70px rgba(0,0,0,0.40)",
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
+                display: "flex",
+                flexDirection: "column",
               }}
             >
               <div
@@ -386,8 +391,8 @@ export function AppShell({
                   alignItems: "center",
                   gap: 10,
                   background: "rgba(21,21,24,0.92)",
-                  backdropFilter: "blur(14px)",
-                  WebkitBackdropFilter: "blur(14px)",
+                  backdropFilter: "blur(16px)",
+                  WebkitBackdropFilter: "blur(16px)",
                 }}
               >
                 <div style={{ fontWeight: 950, fontSize: 16, color: UI.inkOnDark }}>Menu</div>
@@ -409,11 +414,16 @@ export function AppShell({
                 </button>
               </div>
 
-              <div style={{ padding: 12 }}>
+              <div
+                style={{
+                  padding: 12,
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                }}
+              >
                 <Sidebar onNavigate={() => setMenuOpen(false)} />
+                <div style={{ height: `calc(12px + env(safe-area-inset-bottom))` }} />
               </div>
-
-              <div style={{ height: 12 }} />
             </div>
           </GlassOverlay>
         ) : null}
