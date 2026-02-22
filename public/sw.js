@@ -1,6 +1,7 @@
-/* Basic service worker for HelixX (safe + simple) */
+/* public/sw.js */
 const CACHE_NAME = "helixx-cache-v1";
 
+// Keep this list small + safe (pages + icons)
 const CORE_ASSETS = [
   "/",
   "/dashboard",
@@ -8,63 +9,69 @@ const CORE_ASSETS = [
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
+  "/icons/icon-512-maskable.png",
   "/icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).then(() => self.skipWaiting())
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.addAll(CORE_ASSETS);
+      self.skipWaiting();
+    })()
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then((keys) =>
-        Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve(true))))
-      ),
-    ])
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)));
+      await self.clients.claim();
+    })()
   );
 });
 
-// Network-first for navigation, cache-first for assets
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-
-  // Only handle GET
-  if (req.method !== "GET") return;
-
   const url = new URL(req.url);
 
-  // Only same-origin
+  // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
 
-  // Navigation requests: try network, fallback to offline page
+  // Navigations (pages): network-first, fallback to cache/offline
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match("/offline"))
+      (async () => {
+        try {
+          const fresh = await fetch(req);
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(req, fresh.clone());
+          return fresh;
+        } catch {
+          const cache = await caches.open(CACHE_NAME);
+          return (await cache.match(req)) || (await cache.match("/offline")) || Response.error();
+        }
+      })()
     );
     return;
   }
 
   // Static assets: cache-first
   event.respondWith(
-    caches.match(req).then((cached) => {
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(req);
       if (cached) return cached;
-      return fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          return res;
-        })
-        .catch(() => cached);
-    })
+
+      try {
+        const fresh = await fetch(req);
+        cache.put(req, fresh.clone());
+        return fresh;
+      } catch {
+        return cached || Response.error();
+      }
+    })()
   );
 });

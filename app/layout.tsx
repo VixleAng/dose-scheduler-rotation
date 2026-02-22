@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import SWRegister from "./sw-register";
 
 export const metadata: Metadata = {
   title: "HelixX",
@@ -16,9 +17,7 @@ export const metadata: Metadata = {
       { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [
-      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
@@ -39,7 +38,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Theme color for browsers */}
         <meta name="theme-color" content="#0B0B0D" />
       </head>
-      <body suppressHydrationWarning>{children}</body>
+
+      <body suppressHydrationWarning>
+        <SWRegister />
+        {children}
+      </body>
     </html>
   );
 }
