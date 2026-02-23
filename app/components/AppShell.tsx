@@ -106,7 +106,7 @@ function useIsMobile(breakpoint = 980) {
 
   // ✅ During SSR + initial hydration, always behave like desktop.
   // After mount, we can safely flip to true on mobile without mismatch.
-  return mounted ? isMobile : false;
+  return { mounted, isMobile: mounted ? isMobile : false };
 }
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -142,8 +142,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         style={{
           padding: "14px 14px 10px",
           borderBottom: `1px solid rgba(255,255,255,0.08)`,
-          background:
-            "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(225,6,0,0.10) 100%)",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(225,6,0,0.10) 100%)",
           display: "flex",
           alignItems: "center",
           gap: 10,
@@ -246,13 +245,9 @@ export function AppShell({
   subtitle?: string;
   children: React.ReactNode;
 }) {
-  const isMobile = useIsMobile(980);
+  const { mounted, isMobile } = useIsMobile(980);
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
-
-  // ✅ NEW: mounted gate for hydration safety
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   // App background (single source of truth)
   useEffect(() => {
@@ -287,8 +282,7 @@ export function AppShell({
             border: `1px solid rgba(255,255,255,0.10)`,
             borderRadius: 18,
             padding: isMobile ? 10 : 14,
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%)",
             boxShadow: UI.shadow,
             display: "flex",
             justifyContent: "space-between",
@@ -362,7 +356,7 @@ export function AppShell({
           <div style={{ minHeight: 1 }}>{children}</div>
         </div>
 
-        {/* Mobile menu */}
+        {/* Mobile menu (✅ gated until mounted to avoid hydration mismatch) */}
         {mounted && isMobile && menuOpen ? (
           <GlassOverlay onClose={() => setMenuOpen(false)} align="bottom">
             <div
