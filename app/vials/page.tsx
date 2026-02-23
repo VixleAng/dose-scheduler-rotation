@@ -55,7 +55,7 @@ function todayISO() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// ✅ Safe frequency label (prevents Vercel crash if old data has missing frequency)
+// ✅ Safe frequency label
 function freqLabel(freq: any): string {
   const s = typeof freq === "string" ? freq : "";
   return s ? s.split("_").join(" ") : "—";
@@ -162,6 +162,15 @@ export default function VialsPage() {
   const [vials, setVials] = useState<Vial[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
 
+  // simple responsive flag (SSR-safe)
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 780);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   // Drawer state
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -188,7 +197,6 @@ export default function VialsPage() {
 
       if (vv) setVials(vv);
 
-      // ✅ extra safety: filter out any routines missing core fields
       if (rrArr) {
         const clean = rrArr.filter((r: any) => r && typeof r.id === "string" && typeof r.name === "string");
         setRoutines(clean as Routine[]);
@@ -208,22 +216,48 @@ export default function VialsPage() {
 
   const activeVials = useMemo(() => vials.filter((v) => !v.archived), [vials]);
 
-  const totals = useMemo(() => {
-    const totalMg = activeVials.reduce((s, v) => s + (Number.isFinite(v.vialMg) ? v.vialMg : 0), 0);
-    const used = activeVials.reduce((s, v) => s + (Number.isFinite(v.usedMg) ? v.usedMg : 0), 0);
-    const remaining = Math.max(0, totalMg - used);
-    return { totalMg, used, remaining };
-  }, [activeVials]);
+  function vialDerived(v: Vial) {
+    const concentration = v.vialMg / v.bacMl; // mg/mL
+    const r = routines.find((x) => x.id === v.routineId);
+    const dose = (r as any)?.doseMg;
+    const remMg = Math.max(0, v.vialMg - v.usedMg);
 
-  const lowStock = useMemo(() => {
-    return activeVials.some((v) => {
-      const r = routines.find((x) => x.id === v.routineId);
-      const dose = (r as any)?.doseMg;
-      if (!dose || dose <= 0) return false;
-      const rem = Math.max(0, v.vialMg - v.usedMg);
-      const injLeft = rem / dose;
-      return injLeft <= 2.01;
-    });
+    let shotsLeftExact = NaN;
+    let fullShotsLeft = NaN;
+
+    let nextDoseISO: string | null = null;
+    let runOutISO: string | null = null;
+
+    if (dose && dose > 0 && r && (r as any).frequency) {
+      shotsLeftExact = remMg / dose;
+      fullShotsLeft = Math.floor(shotsLeftExact + 1e-9);
+
+      nextDoseISO = calcNextDoseDate(r as Routine);
+      runOutISO = calcRunOutDate(r as Routine, Number.isFinite(fullShotsLeft) ? fullShotsLeft : 0);
+    }
+
+    return { concentration, r, dose, remMg, shotsLeftExact, fullShotsLeft, nextDoseISO, runOutISO };
+  }
+
+  const lowVialsCount = useMemo(() => {
+    let c = 0;
+    for (const v of activeVials) {
+      const d = vialDerived(v);
+      if (Number.isFinite(d.fullShotsLeft) && d.fullShotsLeft <= 2) c++;
+    }
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVials, routines]);
+
+  const soonestRunOut = useMemo(() => {
+    const dates: string[] = [];
+    for (const v of activeVials) {
+      const d = vialDerived(v);
+      if (d.runOutISO && d.runOutISO !== "—") dates.push(d.runOutISO);
+    }
+    dates.sort(); // ISO sorts correctly
+    return dates[0] ?? "—";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVials, routines]);
 
   function resetForm() {
@@ -350,6 +384,18 @@ export default function VialsPage() {
     boxShadow: "0 10px 22px rgba(0,0,0,0.06)",
   };
 
+  const pillMini: React.CSSProperties = {
+    padding: "7px 10px",
+    borderRadius: 12,
+    border: `1px solid rgba(17,17,17,0.14)`,
+    background: "#fff",
+    color: UI.ink,
+    fontWeight: 950,
+    cursor: "pointer",
+    lineHeight: 1,
+    minHeight: 34,
+  };
+
   const input: React.CSSProperties = {
     width: "100%",
     padding: 12,
@@ -362,47 +408,30 @@ export default function VialsPage() {
     fontSize: 16,
   };
 
-  function vialDerived(v: Vial) {
-    const concentration = v.vialMg / v.bacMl; // mg/mL
-    const r = routines.find((x) => x.id === v.routineId);
-    const dose = (r as any)?.doseMg;
-    const remMg = Math.max(0, v.vialMg - v.usedMg);
-
-    let shotsLeftExact = NaN;
-    let fullShotsLeft = NaN;
-
-    let nextDoseISO: string | null = null;
-    let runOutISO: string | null = null;
-
-    if (dose && dose > 0 && r && (r as any).frequency) {
-      shotsLeftExact = remMg / dose;
-      fullShotsLeft = Math.floor(shotsLeftExact + 1e-9);
-
-      nextDoseISO = calcNextDoseDate(r as Routine);
-      runOutISO = calcRunOutDate(r as Routine, Number.isFinite(fullShotsLeft) ? fullShotsLeft : 0);
-    }
-
-    return { concentration, r, dose, remMg, shotsLeftExact, fullShotsLeft, nextDoseISO, runOutISO };
-  }
-
   return (
-    <AppShell title="Stock" subtitle="Track vials, estimate shots left, and plan ahead.">
+    <AppShell title="Stock" subtitle="Know what you have, what’s running low, and what to reorder next.">
       <AppPage>
         {/* KPI row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(0, 1fr))",
+            gap: 12,
+          }}
+        >
           <div style={card}>
-            <div style={kpiValue}>{fmt(totals.remaining, 1)} mg</div>
-            <div style={kpiLabel}>Total remaining (active vials)</div>
+            <div style={kpiValue}>{soonestRunOut}</div>
+            <div style={kpiLabel}>Run-out soonest (linked vials)</div>
+          </div>
+
+          <div style={{ ...card, border: lowVialsCount > 0 ? `1px solid rgba(255,106,61,0.55)` : `1px solid ${UI.line}` }}>
+            <div style={kpiValue}>{lowVialsCount}</div>
+            <div style={kpiLabel}>Low vials (≤ 2 shots left)</div>
           </div>
 
           <div style={card}>
             <div style={kpiValue}>{activeVials.length}</div>
-            <div style={kpiLabel}>Active vials</div>
-          </div>
-
-          <div style={{ ...card, border: lowStock ? `1px solid rgba(255,106,61,0.55)` : `1px solid ${UI.line}` }}>
-            <div style={kpiValue}>{lowStock ? "Low" : "OK"}</div>
-            <div style={kpiLabel}>Stock status (based on routines)</div>
+            <div style={kpiLabel}>Total vials (active)</div>
           </div>
         </div>
 
@@ -420,7 +449,7 @@ export default function VialsPage() {
         {/* Table */}
         <div style={{ marginTop: 12, ...card, padding: 0, overflow: "hidden" }}>
           <div style={{ padding: 14, borderBottom: `1px solid ${UI.line}`, display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <div style={{ fontWeight: 950, color: UI.ink }}>Vials</div>
+            <div style={{ fontWeight: 950, color: UI.ink }}>Your vials</div>
             <div style={{ color: UI.muted, fontWeight: 850, fontSize: 12 }}>
               {vials.length ? `${activeVials.length} active • ${vials.filter((x) => x.archived).length} archived` : "No vials yet"}
             </div>
@@ -435,7 +464,7 @@ export default function VialsPage() {
               <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
                 <thead>
                   <tr style={{ background: "rgba(17,17,17,0.02)" }}>
-                    {["Vial", "Routine", "Recon", "Conc.", "Used", "Remaining", "Est. left", "Actions"].map((h) => (
+                    {["Vial", "Routine", "Recon", "Conc.", "Remaining", "Est. left", "Actions"].map((h) => (
                       <th
                         key={h}
                         style={{
@@ -498,20 +527,6 @@ export default function VialsPage() {
                           </td>
 
                           <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
-                            <div style={{ fontWeight: 950, color: UI.ink }}>{fmt(v.usedMg, 1)} mg</div>
-                            {!v.archived ? (
-                              <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button onClick={() => adjustUsed(v.id, -1)} style={btnSoft}>
-                                  −1
-                                </button>
-                                <button onClick={() => adjustUsed(v.id, +1)} style={btnSoft}>
-                                  +1
-                                </button>
-                              </div>
-                            ) : null}
-                          </td>
-
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
                             <div style={{ fontWeight: 950, color: UI.ink }}>{fmt(d.remMg, 1)} mg</div>
                           </td>
 
@@ -529,22 +544,31 @@ export default function VialsPage() {
                           </td>
 
                           <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)`, whiteSpace: "nowrap" }}>
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                               <button onClick={() => openEdit(v)} style={btnSoft}>
                                 Edit
                               </button>
+
                               {!v.archived ? (
-                                <button
-                                  onClick={() => archive(v.id)}
-                                  style={{ ...btnSoft, border: `1px solid rgba(17,17,17,0.18)`, color: "rgba(17,17,17,0.70)" }}
-                                >
-                                  Archive
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => archive(v.id)}
+                                    style={{ ...btnSoft, border: `1px solid rgba(17,17,17,0.18)`, color: "rgba(17,17,17,0.70)" }}
+                                  >
+                                    Archive
+                                  </button>
+
+                                  <div style={{ display: "flex", gap: 8 }}>
+                                    <button onClick={() => adjustUsed(v.id, -1)} style={pillMini} title="Decrease used (mg)">
+                                      −1
+                                    </button>
+                                    <button onClick={() => adjustUsed(v.id, +1)} style={pillMini} title="Increase used (mg)">
+                                      +1
+                                    </button>
+                                  </div>
+                                </>
                               ) : (
-                                <button
-                                  onClick={() => unarchive(v.id)}
-                                  style={{ ...btnSoft, border: `1px solid rgba(255,106,61,0.35)`, background: UI.accentSoft }}
-                                >
+                                <button onClick={() => unarchive(v.id)} style={{ ...btnSoft, border: `1px solid rgba(255,106,61,0.35)`, background: UI.accentSoft }}>
                                   Restore
                                 </button>
                               )}
@@ -569,7 +593,7 @@ export default function VialsPage() {
               background: "rgba(0,0,0,0.35)",
               zIndex: 90,
               display: "flex",
-              alignItems: "flex-end",
+              alignItems: isMobile ? "flex-end" : "center",
               justifyContent: "center",
               padding: 12,
             }}
@@ -578,13 +602,16 @@ export default function VialsPage() {
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: "min(820px, 100%)",
+                maxHeight: isMobile ? `calc(88vh - env(safe-area-inset-top))` : "86vh",
+                overflow: "hidden",
                 background: "rgba(255,255,255,0.92)",
                 backdropFilter: "blur(14px)",
                 WebkitBackdropFilter: "blur(14px)",
                 border: `1px solid ${UI.line}`,
                 borderRadius: 20,
                 boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
-                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
               }}
             >
               <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
@@ -623,8 +650,8 @@ export default function VialsPage() {
                 </button>
               </div>
 
-              <div style={{ padding: 14 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={{ padding: 14, overflow: "auto", WebkitOverflowScrolling: "touch" as any }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
                   <div>
                     <div style={{ fontWeight: 950, color: "rgba(17,17,17,0.72)", marginBottom: 8 }}>Vial name</div>
                     <input value={name} onChange={(e) => setName(e.target.value)} style={input} placeholder="e.g. Tirz vial" />
