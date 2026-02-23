@@ -8,19 +8,19 @@ type Frequency = "daily" | "weekly" | "twice_weekly" | "three_times_weekly";
 type Routine = {
   id: string;
   name: string;
-  doseMg: number; // planned dose per injection
+  doseMg: number;
   frequency: Frequency;
   startDate?: string; // YYYY-MM-DD
 };
 
 type Vial = {
   id: string;
-  name: string; // e.g. Tirz 10mg vial
+  name: string;
   routineId?: string;
-  vialMg: number; // total mg in vial
-  bacMl: number; // water added
-  reconDate: string; // YYYY-MM-DD
-  usedMg: number; // how much consumed so far
+  vialMg: number;
+  bacMl: number;
+  reconDate: string;
+  usedMg: number;
   notes?: string;
   archived?: boolean;
   createdAt: number;
@@ -55,7 +55,6 @@ function todayISO() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// ✅ Safe frequency label
 function freqLabel(freq: any): string {
   const s = typeof freq === "string" ? freq : "";
   return s ? s.split("_").join(" ") : "—";
@@ -95,9 +94,7 @@ function migrateRoutinesToV4() {
   }
 }
 
-/* -------------------------
-   Schedule-accurate run-out helpers
--------------------------- */
+/* ---------- schedule helpers ---------- */
 
 function isoDateOnly(d: Date) {
   const yyyy = d.getFullYear();
@@ -105,29 +102,24 @@ function isoDateOnly(d: Date) {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
-
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 }
-
 function addDays(d: Date, days: number) {
   const x = new Date(d);
   x.setDate(x.getDate() + days);
   return x;
 }
-
 function getDefaultWeekdays(freq: Frequency, anchor: Date) {
-  const anchorDow = anchor.getDay(); // 0=Sun..6=Sat
+  const anchorDow = anchor.getDay();
   if (freq === "daily") return [0, 1, 2, 3, 4, 5, 6];
   if (freq === "weekly") return [anchorDow];
-  if (freq === "twice_weekly") return [1, 4]; // Mon, Thu
-  return [1, 3, 5]; // Mon, Wed, Fri
+  if (freq === "twice_weekly") return [1, 4];
+  return [1, 3, 5];
 }
-
 function nextOccurrencesFrom(from: Date, weekdays: number[], count: number): Date[] {
   const out: Date[] = [];
   let cursor = startOfDay(from);
-
   while (out.length < count) {
     const dow = cursor.getDay();
     if (weekdays.includes(dow)) out.push(new Date(cursor));
@@ -135,24 +127,18 @@ function nextOccurrencesFrom(from: Date, weekdays: number[], count: number): Dat
   }
   return out;
 }
-
 function calcRunOutDate(r: Routine, fullShotsLeft: number): string | null {
   if (fullShotsLeft <= 0) return null;
-
   const anchor = r.startDate ? startOfDay(new Date(r.startDate)) : startOfDay(new Date());
   const weekdays = getDefaultWeekdays(r.frequency, anchor);
-
   const today = startOfDay(new Date());
   const occurrences = nextOccurrencesFrom(today, weekdays, fullShotsLeft);
-
   const last = occurrences[fullShotsLeft - 1];
   return last ? isoDateOnly(last) : null;
 }
-
 function calcNextDoseDate(r: Routine): string | null {
   const anchor = r.startDate ? startOfDay(new Date(r.startDate)) : startOfDay(new Date());
   const weekdays = getDefaultWeekdays(r.frequency, anchor);
-
   const today = startOfDay(new Date());
   const next = nextOccurrencesFrom(today, weekdays, 1)[0];
   return next ? isoDateOnly(next) : null;
@@ -162,7 +148,7 @@ export default function VialsPage() {
   const [vials, setVials] = useState<Vial[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
 
-  // simple responsive flag (SSR-safe)
+  // Responsive flag (client-only)
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 780);
@@ -184,7 +170,6 @@ export default function VialsPage() {
   const [usedMg, setUsedMg] = useState("0");
   const [notes, setNotes] = useState("");
 
-  // Load (with routines migration first)
   useEffect(() => {
     try {
       migrateRoutinesToV4();
@@ -202,12 +187,9 @@ export default function VialsPage() {
         setRoutines(clean as Routine[]);
         setRoutineId((clean as any[])[0]?.id ?? "");
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, []);
 
-  // Persist vials
   useEffect(() => {
     try {
       localStorage.setItem(LS_VIALS, JSON.stringify(vials));
@@ -217,26 +199,23 @@ export default function VialsPage() {
   const activeVials = useMemo(() => vials.filter((v) => !v.archived), [vials]);
 
   function vialDerived(v: Vial) {
-    const concentration = v.vialMg / v.bacMl; // mg/mL
+    const concentration = v.vialMg / v.bacMl;
     const r = routines.find((x) => x.id === v.routineId);
     const dose = (r as any)?.doseMg;
     const remMg = Math.max(0, v.vialMg - v.usedMg);
 
-    let shotsLeftExact = NaN;
     let fullShotsLeft = NaN;
-
     let nextDoseISO: string | null = null;
     let runOutISO: string | null = null;
 
     if (dose && dose > 0 && r && (r as any).frequency) {
-      shotsLeftExact = remMg / dose;
+      const shotsLeftExact = remMg / dose;
       fullShotsLeft = Math.floor(shotsLeftExact + 1e-9);
-
       nextDoseISO = calcNextDoseDate(r as Routine);
       runOutISO = calcRunOutDate(r as Routine, Number.isFinite(fullShotsLeft) ? fullShotsLeft : 0);
     }
 
-    return { concentration, r, dose, remMg, shotsLeftExact, fullShotsLeft, nextDoseISO, runOutISO };
+    return { concentration, r, dose, remMg, fullShotsLeft, nextDoseISO, runOutISO };
   }
 
   const lowVialsCount = useMemo(() => {
@@ -253,9 +232,9 @@ export default function VialsPage() {
     const dates: string[] = [];
     for (const v of activeVials) {
       const d = vialDerived(v);
-      if (d.runOutISO && d.runOutISO !== "—") dates.push(d.runOutISO);
+      if (d.runOutISO) dates.push(d.runOutISO);
     }
-    dates.sort(); // ISO sorts correctly
+    dates.sort();
     return dates[0] ?? "—";
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVials, routines]);
@@ -341,16 +320,6 @@ export default function VialsPage() {
     setVials((prev) => prev.map((v) => (v.id === id ? { ...v, archived: false } : v)));
   }
 
-  function adjustUsed(id: string, deltaMg: number) {
-    setVials((prev) =>
-      prev.map((v) => {
-        if (v.id !== id) return v;
-        const nextUsed = clamp((v.usedMg ?? 0) + deltaMg, 0, v.vialMg);
-        return { ...v, usedMg: nextUsed };
-      })
-    );
-  }
-
   const card: React.CSSProperties = {
     border: `1px solid ${UI.line}`,
     borderRadius: 18,
@@ -359,8 +328,28 @@ export default function VialsPage() {
     padding: 14,
   };
 
-  const kpiValue: React.CSSProperties = { fontSize: 26, fontWeight: 950, color: UI.ink, letterSpacing: -0.2 };
-  const kpiLabel: React.CSSProperties = { marginTop: 6, fontWeight: 850, color: UI.muted, fontSize: 12 };
+  // ✅ Smaller KPI look (esp mobile)
+  const kpiCard: React.CSSProperties = {
+    ...card,
+    padding: isMobile ? 10 : 14,
+    borderRadius: isMobile ? 16 : 18,
+  };
+
+  const kpiValue: React.CSSProperties = {
+    fontSize: isMobile ? 18 : 26,
+    fontWeight: 950,
+    color: UI.ink,
+    letterSpacing: -0.2,
+    lineHeight: 1.05,
+  };
+
+  const kpiLabel: React.CSSProperties = {
+    marginTop: 5,
+    fontWeight: 850,
+    color: UI.muted,
+    fontSize: isMobile ? 11 : 12,
+    lineHeight: 1.15,
+  };
 
   const btnPrimary: React.CSSProperties = {
     padding: "10px 12px",
@@ -384,18 +373,6 @@ export default function VialsPage() {
     boxShadow: "0 10px 22px rgba(0,0,0,0.06)",
   };
 
-  const pillMini: React.CSSProperties = {
-    padding: "7px 10px",
-    borderRadius: 12,
-    border: `1px solid rgba(17,17,17,0.14)`,
-    background: "#fff",
-    color: UI.ink,
-    fontWeight: 950,
-    cursor: "pointer",
-    lineHeight: 1,
-    minHeight: 34,
-  };
-
   const input: React.CSSProperties = {
     width: "100%",
     padding: 12,
@@ -408,6 +385,12 @@ export default function VialsPage() {
     fontSize: 16,
   };
 
+  const sortedVials = useMemo(() => {
+    return vials
+      .slice()
+      .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  }, [vials]);
+
   return (
     <AppShell title="Stock" subtitle="Know what you have, what’s running low, and what to reorder next.">
       <AppPage>
@@ -415,23 +398,28 @@ export default function VialsPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(0, 1fr))",
-            gap: 12,
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gap: isMobile ? 8 : 12,
           }}
         >
-          <div style={card}>
+          <div style={kpiCard}>
             <div style={kpiValue}>{soonestRunOut}</div>
-            <div style={kpiLabel}>Run-out soonest (linked vials)</div>
+            <div style={kpiLabel}>Run-out soonest</div>
           </div>
 
-          <div style={{ ...card, border: lowVialsCount > 0 ? `1px solid rgba(255,106,61,0.55)` : `1px solid ${UI.line}` }}>
+          <div
+            style={{
+              ...kpiCard,
+              border: lowVialsCount > 0 ? `1px solid rgba(255,106,61,0.55)` : `1px solid ${UI.line}`,
+            }}
+          >
             <div style={kpiValue}>{lowVialsCount}</div>
-            <div style={kpiLabel}>Low vials (≤ 2 shots left)</div>
+            <div style={kpiLabel}>Low vials (≤2)</div>
           </div>
 
-          <div style={card}>
+          <div style={kpiCard}>
             <div style={kpiValue}>{activeVials.length}</div>
-            <div style={kpiLabel}>Total vials (active)</div>
+            <div style={kpiLabel}>Total vials</div>
           </div>
         </div>
 
@@ -440,13 +428,12 @@ export default function VialsPage() {
           <button onClick={openNew} style={btnPrimary}>
             + Add vial
           </button>
-
           <div style={{ color: UI.muted, fontWeight: 850, fontSize: 13 }}>
-            Tip: Link a vial to a routine to estimate injections left + run-out date.
+            Tip: Link a vial to a routine to estimate shots left + run-out date.
           </div>
         </div>
 
-        {/* Table */}
+        {/* LIST (mobile) vs TABLE (desktop) */}
         <div style={{ marginTop: 12, ...card, padding: 0, overflow: "hidden" }}>
           <div style={{ padding: 14, borderBottom: `1px solid ${UI.line}`, display: "flex", justifyContent: "space-between", gap: 12 }}>
             <div style={{ fontWeight: 950, color: UI.ink }}>Your vials</div>
@@ -459,7 +446,115 @@ export default function VialsPage() {
             <div style={{ padding: 14, color: UI.muted, fontWeight: 850, lineHeight: 1.5 }}>
               Add your first vial to start tracking how many injections are left.
             </div>
+          ) : isMobile ? (
+            /* ✅ MOBILE: readable cards */
+            <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+              {sortedVials.map((v) => {
+                const d = vialDerived(v);
+                const isLow = Number.isFinite(d.fullShotsLeft) && d.fullShotsLeft <= 2;
+
+                return (
+                  <div
+                    key={v.id}
+                    style={{
+                      border: `1px solid ${UI.line}`,
+                      borderRadius: 18,
+                      background: "#fff",
+                      padding: 12,
+                      boxShadow: "0 10px 22px rgba(0,0,0,0.06)",
+                      opacity: v.archived ? 0.55 : 1,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 950, color: UI.ink, fontSize: 15, lineHeight: 1.2 }}>{v.name}</div>
+                        <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
+                          {fmt(v.vialMg, 1)} mg • {fmt(v.bacMl, 2)} mL • {fmt(d.concentration, 2)} mg/mL
+                        </div>
+                        <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
+                          Recon: <span style={{ color: UI.ink }}>{v.reconDate}</span>
+                        </div>
+                        <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
+                          Remaining: <span style={{ color: UI.ink }}>{fmt(d.remMg, 1)} mg</span>
+                        </div>
+                      </div>
+
+                      {Number.isFinite(d.fullShotsLeft) ? (
+                        <div
+                          style={{
+                            flex: "0 0 auto",
+                            textAlign: "right",
+                            padding: "8px 10px",
+                            borderRadius: 14,
+                            border: isLow ? `1px solid rgba(255,106,61,0.55)` : `1px solid rgba(17,17,17,0.10)`,
+                            background: isLow ? "rgba(225,6,0,0.08)" : "rgba(17,17,17,0.03)",
+                          }}
+                        >
+                          <div style={{ fontWeight: 950, color: isLow ? UI.accent : UI.ink, fontSize: 14 }}>
+                            {d.fullShotsLeft} shots
+                          </div>
+                          <div style={{ marginTop: 2, fontWeight: 850, color: UI.muted, fontSize: 11 }}>
+                            Next: {d.nextDoseISO ?? "—"}
+                          </div>
+                          <div style={{ marginTop: 2, fontWeight: 850, color: UI.muted, fontSize: 11 }}>
+                            Run-out: {d.runOutISO ?? "—"}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ flex: "0 0 auto", fontWeight: 900, color: "rgba(17,17,17,0.55)", fontSize: 12 }}>
+                          Not linked
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Routine line */}
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid rgba(17,17,17,0.08)` }}>
+                      {d.r ? (
+                        <div style={{ fontWeight: 900, color: UI.ink, fontSize: 13 }}>
+                          {(d.r as any).name ?? "Routine"}{" "}
+                          <span style={{ color: UI.muted, fontWeight: 850 }}>
+                            • {fmt((d.r as any).doseMg ?? NaN, 2)} mg • {freqLabel((d.r as any).frequency)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ fontWeight: 850, color: UI.muted, fontSize: 13 }}>Link a routine to get run-out dates</div>
+                      )}
+
+                      {v.notes ? (
+                        <div style={{ marginTop: 6, fontWeight: 850, color: "rgba(17,17,17,0.55)", fontSize: 12 }}>
+                          {v.notes}
+                        </div>
+                      ) : null}
+
+                      {/* Actions (no -1/+1) */}
+                      <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                        <button onClick={() => openEdit(v)} style={btnSoft}>
+                          Edit
+                        </button>
+
+                        {!v.archived ? (
+                          <button
+                            onClick={() => archive(v.id)}
+                            style={{ ...btnSoft, border: `1px solid rgba(17,17,17,0.18)`, color: "rgba(17,17,17,0.70)" }}
+                          >
+                            Archive
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => unarchive(v.id)}
+                            style={{ ...btnSoft, border: `1px solid rgba(255,106,61,0.35)`, background: UI.accentSoft }}
+                          >
+                            Restore
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
+            /* ✅ DESKTOP: table (no -1/+1, no Used column) */
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
                 <thead>
@@ -484,99 +579,88 @@ export default function VialsPage() {
                 </thead>
 
                 <tbody>
-                  {vials
-                    .slice()
-                    .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || (b.createdAt ?? 0) - (a.createdAt ?? 0))
-                    .map((v) => {
-                      const d = vialDerived(v);
-                      const isLow = Number.isFinite(d.fullShotsLeft) && d.fullShotsLeft <= 2;
+                  {sortedVials.map((v) => {
+                    const d = vialDerived(v);
+                    const isLow = Number.isFinite(d.fullShotsLeft) && d.fullShotsLeft <= 2;
 
-                      return (
-                        <tr key={v.id} style={{ opacity: v.archived ? 0.55 : 1 }}>
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
-                            <div style={{ fontWeight: 950, color: UI.ink }}>{v.name}</div>
-                            <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
-                              {fmt(v.vialMg, 1)} mg • {fmt(v.bacMl, 2)} mL
+                    return (
+                      <tr key={v.id} style={{ opacity: v.archived ? 0.55 : 1 }}>
+                        <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
+                          <div style={{ fontWeight: 950, color: UI.ink }}>{v.name}</div>
+                          <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
+                            {fmt(v.vialMg, 1)} mg • {fmt(v.bacMl, 2)} mL
+                          </div>
+                          {v.notes ? (
+                            <div style={{ marginTop: 4, fontWeight: 850, color: "rgba(17,17,17,0.55)", fontSize: 12 }}>
+                              {v.notes}
                             </div>
-                            {v.notes ? (
-                              <div style={{ marginTop: 4, fontWeight: 850, color: "rgba(17,17,17,0.55)", fontSize: 12 }}>
-                                {v.notes}
+                          ) : null}
+                        </td>
+
+                        <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
+                          {d.r ? (
+                            <>
+                              <div style={{ fontWeight: 950, color: UI.ink }}>{(d.r as any).name ?? "Routine"}</div>
+                              <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
+                                {fmt((d.r as any).doseMg ?? NaN, 2)} mg • {freqLabel((d.r as any).frequency)}
                               </div>
-                            ) : null}
-                          </td>
+                            </>
+                          ) : (
+                            <div style={{ fontWeight: 900, color: "rgba(17,17,17,0.55)" }}>Not linked</div>
+                          )}
+                        </td>
 
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
-                            {d.r ? (
-                              <>
-                                <div style={{ fontWeight: 950, color: UI.ink }}>{(d.r as any).name ?? "Routine"}</div>
-                                <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
-                                  {fmt((d.r as any).doseMg ?? NaN, 2)} mg • {freqLabel((d.r as any).frequency)}
-                                </div>
-                              </>
-                            ) : (
-                              <div style={{ fontWeight: 900, color: "rgba(17,17,17,0.55)" }}>Not linked</div>
-                            )}
-                          </td>
+                        <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)`, whiteSpace: "nowrap" }}>
+                          <div style={{ fontWeight: 900, color: UI.ink }}>{v.reconDate}</div>
+                        </td>
 
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)`, whiteSpace: "nowrap" }}>
-                            <div style={{ fontWeight: 900, color: UI.ink }}>{v.reconDate}</div>
-                          </td>
+                        <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
+                          <div style={{ fontWeight: 950, color: UI.ink }}>{fmt(d.concentration, 2)} mg/mL</div>
+                        </td>
 
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
-                            <div style={{ fontWeight: 950, color: UI.ink }}>{fmt(d.concentration, 2)} mg/mL</div>
-                          </td>
+                        <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
+                          <div style={{ fontWeight: 950, color: UI.ink }}>{fmt(d.remMg, 1)} mg</div>
+                        </td>
 
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
-                            <div style={{ fontWeight: 950, color: UI.ink }}>{fmt(d.remMg, 1)} mg</div>
-                          </td>
+                        <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
+                          {Number.isFinite(d.fullShotsLeft) ? (
+                            <>
+                              <div style={{ fontWeight: 950, color: isLow ? UI.accent : UI.ink }}>{d.fullShotsLeft} shots</div>
+                              <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
+                                Next: {d.nextDoseISO ?? "—"} • Run-out: {d.runOutISO ?? "—"}
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ fontWeight: 900, color: "rgba(17,17,17,0.55)" }}>Link a routine</div>
+                          )}
+                        </td>
 
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)` }}>
-                            {Number.isFinite(d.fullShotsLeft) ? (
-                              <>
-                                <div style={{ fontWeight: 950, color: isLow ? UI.accent : UI.ink }}>{d.fullShotsLeft} shots</div>
-                                <div style={{ marginTop: 4, fontWeight: 850, color: UI.muted, fontSize: 12 }}>
-                                  Next dose: {d.nextDoseISO ?? "—"} • Run-out: {d.runOutISO ?? "—"}
-                                </div>
-                              </>
-                            ) : (
-                              <div style={{ fontWeight: 900, color: "rgba(17,17,17,0.55)" }}>Link a routine</div>
-                            )}
-                          </td>
+                        <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)`, whiteSpace: "nowrap" }}>
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                            <button onClick={() => openEdit(v)} style={btnSoft}>
+                              Edit
+                            </button>
 
-                          <td style={{ padding: "12px 14px", borderBottom: `1px solid rgba(17,17,17,0.06)`, whiteSpace: "nowrap" }}>
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                              <button onClick={() => openEdit(v)} style={btnSoft}>
-                                Edit
+                            {!v.archived ? (
+                              <button
+                                onClick={() => archive(v.id)}
+                                style={{ ...btnSoft, border: `1px solid rgba(17,17,17,0.18)`, color: "rgba(17,17,17,0.70)" }}
+                              >
+                                Archive
                               </button>
-
-                              {!v.archived ? (
-                                <>
-                                  <button
-                                    onClick={() => archive(v.id)}
-                                    style={{ ...btnSoft, border: `1px solid rgba(17,17,17,0.18)`, color: "rgba(17,17,17,0.70)" }}
-                                  >
-                                    Archive
-                                  </button>
-
-                                  <div style={{ display: "flex", gap: 8 }}>
-                                    <button onClick={() => adjustUsed(v.id, -1)} style={pillMini} title="Decrease used (mg)">
-                                      −1
-                                    </button>
-                                    <button onClick={() => adjustUsed(v.id, +1)} style={pillMini} title="Increase used (mg)">
-                                      +1
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <button onClick={() => unarchive(v.id)} style={{ ...btnSoft, border: `1px solid rgba(255,106,61,0.35)`, background: UI.accentSoft }}>
-                                  Restore
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            ) : (
+                              <button
+                                onClick={() => unarchive(v.id)}
+                                style={{ ...btnSoft, border: `1px solid rgba(255,106,61,0.35)`, background: UI.accentSoft }}
+                              >
+                                Restore
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
