@@ -71,11 +71,9 @@ const SPOTS: Spot[] = [
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
-function ymdOf(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
 function todayYMD() {
-  return ymdOf(new Date());
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 function nowTimeHHMM() {
   const d = new Date();
@@ -83,15 +81,13 @@ function nowTimeHHMM() {
 }
 function timeFromISO(iso: string) {
   const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return "—";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
-function fmtFreq(f?: Frequency) {
-  if (!f) return "—";
-  if (f === "daily") return "Daily";
-  if (f === "weekly") return "Weekly";
-  if (f === "twice_weekly") return "2×/week";
-  return "3×/week";
+function ymdFromISO(iso: string) {
+  return iso.slice(0, 10);
+}
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
 }
 function toNum(v: string) {
   const t = v.trim().replace(",", ".");
@@ -100,44 +96,73 @@ function toNum(v: string) {
   return Number.isFinite(n) ? n : NaN;
 }
 
-/** ---------- UI Bits ---------- */
-function Pill({
+function groupLabel(g: Spot["group"]) {
+  switch (g) {
+    case "abdomen":
+      return "Abdomen";
+    case "thigh":
+      return "Thigh";
+    case "arm":
+      return "Upper arm";
+    case "glute":
+      return "Glute";
+  }
+}
+function groupEmoji(g: Spot["group"]) {
+  switch (g) {
+    case "abdomen":
+      return "🧩";
+    case "thigh":
+      return "🦵";
+    case "arm":
+      return "💪";
+    case "glute":
+      return "🍑";
+  }
+}
+
+/** Local “is mobile” (mounted-safe) */
+function useIsMobile(breakpoint = 860) {
+  const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const check = () => setIsMobile(window.innerWidth <= breakpoint);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [breakpoint]);
+
+  return mounted ? isMobile : false;
+}
+
+function Chip({
   active,
-  color,
-  label,
-  sub,
+  children,
   onClick,
 }: {
   active: boolean;
-  color: string;
-  label: string;
-  sub?: string;
+  children: React.ReactNode;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
+      className="pillHover"
       style={{
-        flex: "0 0 auto",
         padding: "10px 12px",
-        borderRadius: 999,
+        borderRadius: 14,
         border: active ? `2px solid ${UI.accent}` : `1px solid rgba(17,17,17,0.18)`,
         background: active ? UI.accentSoft : "#fff",
         cursor: "pointer",
         fontWeight: 950,
         color: UI.ink,
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 10,
-        boxShadow: active ? "0 12px 26px rgba(0,0,0,0.07)" : "0 10px 20px rgba(0,0,0,0.05)",
+        boxShadow: active ? "0 12px 26px rgba(0,0,0,0.06)" : "0 10px 22px rgba(0,0,0,0.04)",
         whiteSpace: "nowrap",
       }}
     >
-      <span style={{ width: 10, height: 10, borderRadius: 99, background: color }} />
-      <span style={{ display: "inline-flex", flexDirection: "column", lineHeight: 1.1 }}>
-        <span>{label}</span>
-        {sub ? <span style={{ fontSize: 12, opacity: 0.65, fontWeight: 900 }}>{sub}</span> : null}
-      </span>
+      {children}
     </button>
   );
 }
@@ -161,43 +186,128 @@ function Card({
         boxShadow: UI.shadow,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-        <div style={{ fontWeight: 950, marginBottom: 10, color: UI.ink }}>{title}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+        <div style={{ fontWeight: 950, color: UI.ink }}>{title}</div>
         {right}
       </div>
-      {children}
+      <div style={{ marginTop: 10 }}>{children}</div>
     </section>
+  );
+}
+
+/** Responsive modal container (desktop centered, mobile fullscreen sheet) */
+function ModalShell({
+  isMobile,
+  title,
+  subtitle,
+  onClose,
+  right,
+  children,
+}: {
+  isMobile: boolean;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <GlassOverlay onClose={onClose} align={isMobile ? "bottom" : "center"}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: isMobile ? "100%" : "min(860px, 100%)",
+          maxWidth: "100%",
+          height: isMobile ? "calc(100dvh - env(safe-area-inset-top))" : "auto",
+          maxHeight: isMobile ? "calc(100dvh - env(safe-area-inset-top))" : "82vh",
+          background: "rgba(255,255,255,0.94)",
+          border: `1px solid ${UI.line}`,
+          borderRadius: isMobile ? "18px 18px 0 0" : 22,
+          boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {/* drag handle */}
+        <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
+
+        {/* header */}
+        <div
+          style={{
+            padding: 14,
+            borderBottom: `1px solid ${UI.line}`,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 950, fontSize: 16, color: UI.ink }}>{title}</div>
+            {subtitle ? (
+              <div style={{ marginTop: 4, color: UI.muted, fontWeight: 850, fontSize: 13 }}>{subtitle}</div>
+            ) : null}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {right}
+            <button
+              onClick={onClose}
+              style={{
+                padding: "10px 12px",
+                minHeight: 40,
+                borderRadius: 999,
+                border: `1px solid rgba(220,38,38,0.35)`,
+                background: "rgba(220,38,38,0.10)",
+                color: "#b91c1c",
+                cursor: "pointer",
+                fontWeight: 950,
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        {/* body */}
+        <div
+          style={{
+            padding: 14,
+            overflow: "auto",
+            WebkitOverflowScrolling: "touch",
+            paddingBottom: `calc(14px + env(safe-area-inset-bottom))`,
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    </GlassOverlay>
   );
 }
 
 /** ---------- Page ---------- */
 export default function TrackerPage() {
+  const isMobile = useIsMobile(860);
+
   const [routines, setRoutines] = useState<Routine[]>(DEFAULT_ROUTINES);
   const [selectedRoutineId, setSelectedRoutineId] = useState<string>(DEFAULT_ROUTINES[0].id);
 
   const [logs, setLogs] = useState<InjectionLog[]>([]);
+  const [recentOpen, setRecentOpen] = useState<boolean>(false);
 
-  // Log sheet
-  const [logSheetOpen, setLogSheetOpen] = useState(false);
-  const [logRoutineId, setLogRoutineId] = useState<string>(DEFAULT_ROUTINES[0].id);
-  const [logDateYMD, setLogDateYMD] = useState<string>(todayYMD());
-  const [logTimeHHMM, setLogTimeHHMM] = useState<string>(nowTimeHHMM());
-  const [logSpotId, setLogSpotId] = useState<string>(SPOTS[0].id);
-  const [logDoseMg, setLogDoseMg] = useState<string>("");
-  const [logNotes, setLogNotes] = useState<string>("");
+  // overlays
+  const [routinesOpen, setRoutinesOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
 
-  // Routine sheet (add/edit)
-  const [routineSheetOpen, setRoutineSheetOpen] = useState(false);
-  const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
-  const [rName, setRName] = useState("");
-  const [rDose, setRDose] = useState("");
-  const [rFreq, setRFreq] = useState<Frequency>("weekly");
-  const [rTime, setRTime] = useState("08:00");
-  const [rRecon, setRRecon] = useState("");
-
-  // Edit log sheet
-  const [editLogId, setEditLogId] = useState<number | null>(null);
-  const editingLog = useMemo(() => logs.find((l) => l.id === editLogId) ?? null, [logs, editLogId]);
+  // log form state (also used for edit)
+  const [editingLogId, setEditingLogId] = useState<number | null>(null);
+  const [sheetRoutineId, setSheetRoutineId] = useState<string>(DEFAULT_ROUTINES[0].id);
+  const [sheetSpotId, setSheetSpotId] = useState<string>(SPOTS[0].id);
+  const [sheetDateYMD, setSheetDateYMD] = useState<string>(todayYMD());
+  const [sheetTimeHHMM, setSheetTimeHHMM] = useState<string>(nowTimeHHMM());
+  const [sheetDoseMg, setSheetDoseMg] = useState<string>("");
+  const [sheetNotes, setSheetNotes] = useState<string>("");
 
   const routineById = useMemo(() => {
     const m: Record<string, Routine> = {};
@@ -218,210 +328,164 @@ export default function TrackerPage() {
 
   // load
   useEffect(() => {
-    try {
-      const sr = localStorage.getItem(STORAGE_KEYS.routines);
-      const sl = localStorage.getItem(STORAGE_KEYS.injectionLogs);
-      if (sr) {
-        const parsed = JSON.parse(sr);
-        if (Array.isArray(parsed) && parsed.length) setRoutines(parsed);
-      }
-      if (sl) {
-        const parsed = JSON.parse(sl);
-        if (Array.isArray(parsed)) setLogs(parsed);
-      }
-    } catch {
-      // ignore
-    }
+    const sr = localStorage.getItem(STORAGE_KEYS.routines);
+    const sl = localStorage.getItem(STORAGE_KEYS.injectionLogs);
+    if (sr) setRoutines(JSON.parse(sr));
+    if (sl) setLogs(JSON.parse(sl));
   }, []);
-
-  // ensure selectedRoutineId exists after load
-  useEffect(() => {
-    if (!routines.length) return;
-    const exists = routines.some((r) => r.id === selectedRoutineId);
-    if (!exists) setSelectedRoutineId(routines[0].id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routines]);
 
   // save
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.routines, JSON.stringify(routines));
-    } catch {}
+    localStorage.setItem(STORAGE_KEYS.routines, JSON.stringify(routines));
   }, [routines]);
-
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.injectionLogs, JSON.stringify(logs));
-    } catch {}
+    localStorage.setItem(STORAGE_KEYS.injectionLogs, JSON.stringify(logs));
   }, [logs]);
 
+  // spots as dropdown groups
+  const spotsGrouped = useMemo(() => {
+    const order: Spot["group"][] = ["abdomen", "thigh", "arm", "glute"];
+    const viewOrder: Spot["view"][] = ["front", "back"];
+    const by: Record<string, Spot[]> = {};
+    for (const v of viewOrder) {
+      for (const g of order) by[`${v}:${g}`] = [];
+    }
+    for (const s of SPOTS) by[`${s.view}:${s.group}`].push(s);
+    return { order, viewOrder, by };
+  }, []);
+
+  // Today logs
   const todayLogs = useMemo(() => {
-    const y = todayYMD();
-    return logs
-      .filter((l) => String(l.injectedAtISO ?? "").slice(0, 10) === y)
-      .slice()
-      .sort((a, b) => String(b.injectedAtISO).localeCompare(String(a.injectedAtISO)));
+    const t = todayYMD();
+    return logs.filter((l) => ymdFromISO(l.injectedAtISO) === t);
   }, [logs]);
 
-  const recentLogs = useMemo(() => logs.slice(0, 12), [logs]);
+  const recent = useMemo(() => logs.slice(0, 12), [logs]);
 
-  function openLogSheet(preset?: { routineId?: string; spotId?: string }) {
-    const rid = preset?.routineId ?? selectedRoutineId;
-    const r = routineById[rid] ?? routines[0];
-
-    setLogRoutineId(rid);
-    setLogDateYMD(todayYMD());
-    setLogTimeHHMM(nowTimeHHMM());
-
-    // Default to routine planned dose
-    setLogDoseMg(r?.doseMg ?? "");
-
-    // Keep last selected spot if possible, else fallback
-    setLogSpotId(preset?.spotId ?? logSpotId ?? SPOTS[0].id);
-
-    setLogNotes("");
-    setLogSheetOpen(true);
+  function setRoutineField(id: string, patch: Partial<Routine>) {
+    setRoutines((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
-  function closeLogSheet() {
-    setLogSheetOpen(false);
+  function addRoutine() {
+    const nextIdx = routines.length + 1;
+    const id = `r${Date.now()}`;
+    setRoutines((prev) => [
+      ...prev,
+      {
+        id,
+        name: `Routine ${nextIdx}`,
+        doseMg: "2.5",
+        frequency: "weekly",
+        preferredTime: "08:00",
+      },
+    ]);
+    setSelectedRoutineId(id);
   }
 
-  function logInjection({ keepOpenForAnother }: { keepOpenForAnother: boolean }) {
-    const r = routineById[logRoutineId] ?? routines[0];
-    const spot = SPOTS.find((s) => s.id === logSpotId) ?? SPOTS[0];
+  function deleteRoutine(id: string) {
+    setRoutines((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      if (!next.length) return prev;
+      if (selectedRoutineId === id) setSelectedRoutineId(next[0].id);
+      return next;
+    });
 
-    const injectedISO = new Date(`${logDateYMD}T${logTimeHHMM}`).toISOString();
+    // keep logs but retain historical routineName; no need to mutate logs
+  }
 
-    const item: InjectionLog = {
-      id: Date.now(),
-      spotId: spot.id,
-      spotLabel: spot.label,
-      view: spot.view,
-      routineId: r.id,
-      routineName: r.name,
-      injectedAtISO: injectedISO,
-      doseMg: logDoseMg.trim() ? logDoseMg.trim() : undefined,
-      notes: logNotes.trim() ? logNotes.trim() : undefined,
-      createdAtISO: new Date().toISOString(),
-    };
+  function openLogNew() {
+    setEditingLogId(null);
+    setLogOpen(true);
 
-    setLogs((prev) => [item, ...prev]);
+    setSheetRoutineId(selectedRoutineId);
+    setSheetSpotId(SPOTS[0].id);
+    setSheetDateYMD(todayYMD());
+    setSheetTimeHHMM(nowTimeHHMM());
 
-    if (keepOpenForAnother) {
-      // keep routine + spot + dose + notes? (notes cleared)
-      setLogTimeHHMM(nowTimeHHMM());
-      setLogNotes("");
-      // date stays the same (today default)
-      return;
+    const planned = routineById[selectedRoutineId]?.doseMg ?? "";
+    setSheetDoseMg(planned);
+    setSheetNotes("");
+  }
+
+  function openLogEdit(log: InjectionLog) {
+    setEditingLogId(log.id);
+    setLogOpen(true);
+
+    setSheetRoutineId(log.routineId);
+    setSheetSpotId(log.spotId);
+    setSheetDoseMg(log.doseMg ?? "");
+    setSheetNotes(log.notes ?? "");
+
+    const d = new Date(log.injectedAtISO);
+    const y = d.getFullYear();
+    const m = pad2(d.getMonth() + 1);
+    const da = pad2(d.getDate());
+    setSheetDateYMD(`${y}-${m}-${da}`);
+    setSheetTimeHHMM(`${pad2(d.getHours())}:${pad2(d.getMinutes())}`);
+  }
+
+  function saveLog() {
+    const r = routineById[sheetRoutineId] ?? routines[0];
+    const spot = SPOTS.find((s) => s.id === sheetSpotId) ?? SPOTS[0];
+
+    const injectedISO = new Date(`${sheetDateYMD}T${sheetTimeHHMM}`).toISOString();
+    const dose = sheetDoseMg.trim();
+    const doseClean = dose && Number.isFinite(toNum(dose)) ? dose : dose; // keep user string even if non-numeric
+
+    if (editingLogId == null) {
+      const item: InjectionLog = {
+        id: Date.now(),
+        spotId: spot.id,
+        spotLabel: spot.label,
+        view: spot.view,
+        routineId: r.id,
+        routineName: r.name,
+        injectedAtISO: injectedISO,
+        doseMg: doseClean ? doseClean : undefined,
+        notes: sheetNotes.trim() ? sheetNotes.trim() : undefined,
+        createdAtISO: new Date().toISOString(),
+      };
+      setLogs((prev) => [item, ...prev]);
+    } else {
+      setLogs((prev) =>
+        prev.map((x) =>
+          x.id !== editingLogId
+            ? x
+            : {
+                ...x,
+                spotId: spot.id,
+                spotLabel: spot.label,
+                view: spot.view,
+                routineId: r.id,
+                routineName: r.name,
+                injectedAtISO: injectedISO,
+                doseMg: doseClean ? doseClean : undefined,
+                notes: sheetNotes.trim() ? sheetNotes.trim() : undefined,
+              }
+        )
+      );
     }
 
-    closeLogSheet();
+    setLogOpen(false);
+    setEditingLogId(null);
+    setRecentOpen(true);
   }
 
   function deleteLog(id: number) {
     setLogs((prev) => prev.filter((x) => x.id !== id));
   }
 
-  /** ---- Routine sheet helpers ---- */
-  function openAddRoutine() {
-    setEditingRoutineId(null);
-    setRName(`Routine ${routines.length + 1}`);
-    setRDose("2.5");
-    setRFreq("weekly");
-    setRTime("08:00");
-    setRRecon("");
-    setRoutineSheetOpen(true);
-  }
-
-  function openEditRoutine(id: string) {
-    const r = routineById[id];
-    if (!r) return;
-    setEditingRoutineId(id);
-    setRName(r.name ?? "");
-    setRDose(r.doseMg ?? "");
-    setRFreq((r.frequency ?? "weekly") as Frequency);
-    setRTime(r.preferredTime ?? "08:00");
-    setRRecon(r.reconstitutedOn ?? "");
-    setRoutineSheetOpen(true);
-  }
-
-  function saveRoutine() {
-    const name = (rName || "").trim() || "Routine";
-    const dose = (rDose || "").trim();
-    const doseOk = dose === "" || Number.isFinite(toNum(dose));
-
-    if (!doseOk) return;
-
-    if (!editingRoutineId) {
-      const id = `r${Date.now()}`;
-      const item: Routine = {
-        id,
-        name,
-        doseMg: dose || undefined,
-        frequency: rFreq,
-        preferredTime: rTime,
-        reconstitutedOn: rRecon || undefined,
-      };
-      setRoutines((prev) => [...prev, item]);
-      setSelectedRoutineId(id);
-    } else {
-      setRoutines((prev) =>
-        prev.map((x) =>
-          x.id === editingRoutineId
-            ? {
-                ...x,
-                name,
-                doseMg: dose || undefined,
-                frequency: rFreq,
-                preferredTime: rTime,
-                reconstitutedOn: rRecon || undefined,
-              }
-            : x
-        )
-      );
-    }
-
-    setRoutineSheetOpen(false);
-  }
-
-  function deleteRoutine(id: string) {
-    if (routines.length <= 1) return;
-
-    // Remove routine
-    setRoutines((prev) => prev.filter((r) => r.id !== id));
-
-    // Also keep logs (do NOT delete history automatically) – but rename routine if missing
-    setLogs((prev) =>
-      prev.map((l) => (l.routineId === id ? { ...l, routineName: l.routineName || "Deleted routine" } : l))
-    );
-
-    // Reset selected routine if needed
-    if (selectedRoutineId === id) {
-      const next = routines.filter((r) => r.id !== id);
-      if (next.length) setSelectedRoutineId(next[0].id);
-    }
-  }
-
-  /** ---- Edit log helpers ---- */
-  function openEditLog(id: number) {
-    setEditLogId(id);
-  }
-  function closeEditLog() {
-    setEditLogId(null);
-  }
-  function updateLog(patch: Partial<InjectionLog>) {
-    if (editLogId == null) return;
-    setLogs((prev) => prev.map((l) => (l.id === editLogId ? { ...l, ...patch } : l)));
-  }
-
   return (
-    <AppShell
-      title="Tracker"
-      subtitle="Pick a routine, log injections fast (1–4+ per day), and edit any entry without redoing it."
-    >
+    <AppShell title="Tracker" subtitle="Pick a routine, log injections fast (1–4+ per day), and edit any entry without redoing it.">
       <AppPage>
         <style jsx global>{`
+          .pillHover {
+            transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease, opacity 160ms ease;
+          }
+          .pillHover:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+          }
           .inputPremium {
             outline: none;
             transition: box-shadow 160ms ease, border-color 160ms ease;
@@ -432,86 +496,132 @@ export default function TrackerPage() {
             font-weight: 800;
           }
           .inputPremium:focus {
-            border-color: rgba(225, 6, 0, 0.55) !important;
+            border-color: rgba(225, 6, 0, 0.65) !important;
             box-shadow: 0 0 0 4px rgba(225, 6, 0, 0.12);
+          }
+
+          @media (max-width: 520px) {
+            .twoCol {
+              grid-template-columns: 1fr !important;
+            }
+            .chipRow {
+              display: grid !important;
+              grid-template-columns: 1fr 1fr !important;
+            }
+            .actionRow {
+              display: grid !important;
+              grid-template-columns: 1fr 1fr !important;
+            }
           }
         `}</style>
 
-        {/* Routine pills + primary action */}
-        <Card
-          title="Log injection"
-          right={
-            <button
-              onClick={() => openAddRoutine()}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 999,
-                border: `1px solid rgba(17,17,17,0.18)`,
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 950,
-              }}
-            >
-              + Add routine
-            </button>
-          }
-        >
-          <div style={{ color: UI.muted, fontWeight: 850, fontSize: 13, marginBottom: 10 }}>
-            Tap a routine below, then hit <b>Log injection</b>.
-          </div>
+        <div style={{ marginTop: 12, display: "grid", gap: 14 }}>
+          {/* Log injection (top) */}
+          <Card
+            title="Log injection"
+            right={
+              <div className="actionRow" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setRoutinesOpen(true)}
+                  className="pillHover"
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 999,
+                    border: `1px solid rgba(17,17,17,0.18)`,
+                    background: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 950,
+                    color: UI.ink,
+                    minHeight: 40,
+                  }}
+                >
+                  Manage routines
+                </button>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              overflowX: "auto",
-              WebkitOverflowScrolling: "touch",
-              paddingBottom: 6,
-            }}
+                <button
+                  onClick={addRoutine}
+                  className="pillHover"
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 999,
+                    border: `1px solid rgba(17,17,17,0.18)`,
+                    background: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 950,
+                    color: UI.ink,
+                    minHeight: 40,
+                  }}
+                >
+                  + Add routine
+                </button>
+              </div>
+            }
           >
-            {routines.map((r) => {
-              const active = r.id === selectedRoutineId;
-              const sub = `${(r.doseMg ?? "—")}mg • ${fmtFreq(r.frequency)}`;
-              return (
-                <Pill
-                  key={r.id}
-                  active={active}
-                  color={routineColorById[r.id]}
-                  label={r.name}
-                  sub={sub}
-                  onClick={() => setSelectedRoutineId(r.id)}
-                />
-              );
-            })}
-          </div>
-
-          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <button
-              onClick={() => openLogSheet({ routineId: selectedRoutineId })}
-              style={{
-                padding: "14px 16px",
-                borderRadius: 16,
-                border: `1px solid ${UI.accent}`,
-                background: UI.accent,
-                color: "#fff",
-                cursor: "pointer",
-                fontWeight: 950,
-                fontSize: 16,
-                boxShadow: UI.shadow,
-                minWidth: 220,
-              }}
-            >
-              Log injection →
-            </button>
-
             <div style={{ color: UI.muted, fontWeight: 850, fontSize: 13 }}>
-              Selected: <span style={{ color: UI.ink, fontWeight: 950 }}>{selectedRoutine?.name ?? "—"}</span>
+              Tap a routine below, then hit <b>Log injection</b>.
             </div>
-          </div>
-        </Card>
 
-        {/* Today */}
-        <div style={{ marginTop: 14 }}>
+            <div className="chipRow" style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {routines.map((r) => {
+                const active = r.id === selectedRoutineId;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedRoutineId(r.id)}
+                    className="pillHover"
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 999,
+                      border: active ? `2px solid ${UI.accent}` : `1px solid rgba(17,17,17,0.18)`,
+                      background: active ? UI.accentSoft : "#fff",
+                      cursor: "pointer",
+                      fontWeight: 950,
+                      color: UI.ink,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 10,
+                      minHeight: 44,
+                    }}
+                  >
+                    <span style={{ width: 10, height: 10, borderRadius: 99, background: routineColorById[r.id] }} />
+                    <span style={{ display: "grid", lineHeight: 1.1 }}>
+                      <span>{r.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 850, color: UI.muted }}>
+                        {r.doseMg ? `${r.doseMg}mg` : "—"} • {r.frequency ?? "weekly"}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                onClick={openLogNew}
+                className="pillHover"
+                style={{
+                  padding: "14px 16px",
+                  borderRadius: 16,
+                  border: `1px solid ${UI.accent}`,
+                  background: UI.accent,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 950,
+                  fontSize: 16,
+                  boxShadow: UI.shadow,
+                  width: isMobile ? "100%" : 280,
+                }}
+              >
+                Log injection →
+              </button>
+
+              <div style={{ color: UI.muted, fontWeight: 850, fontSize: 13 }}>
+                Selected: <span style={{ color: UI.ink, fontWeight: 950 }}>{selectedRoutine?.name ?? "—"}</span>
+              </div>
+            </div>
+          </Card>
+
+          {/* Today */}
           <Card title={`Today (${todayYMD()})`} right={<span style={{ color: UI.muted, fontWeight: 850, fontSize: 12 }}>Edit or delete anytime</span>}>
             {!todayLogs.length ? (
               <div style={{ color: UI.muted, fontWeight: 850 }}>No injections logged today.</div>
@@ -541,7 +651,7 @@ export default function TrackerPage() {
                         {l.doseMg ? ` • ${l.doseMg}mg` : ""}
                       </div>
                       {l.notes ? (
-                        <div style={{ marginTop: 6, color: "rgba(17,17,17,0.70)", fontWeight: 800, fontSize: 13 }}>
+                        <div style={{ marginTop: 6, color: "rgba(17,17,17,0.68)", fontWeight: 800, fontSize: 13 }}>
                           {l.notes}
                         </div>
                       ) : null}
@@ -549,7 +659,8 @@ export default function TrackerPage() {
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button
-                        onClick={() => openEditLog(l.id)}
+                        onClick={() => openLogEdit(l)}
+                        className="pillHover"
                         style={{
                           padding: "10px 12px",
                           borderRadius: 999,
@@ -562,9 +673,9 @@ export default function TrackerPage() {
                       >
                         Edit
                       </button>
-
                       <button
                         onClick={() => deleteLog(l.id)}
+                        className="pillHover"
                         style={{
                           padding: "10px 12px",
                           borderRadius: 999,
@@ -584,16 +695,38 @@ export default function TrackerPage() {
               </div>
             )}
           </Card>
-        </div>
 
-        {/* Recent */}
-        <div style={{ marginTop: 14 }}>
-          <Card title="Recent injections" right={<span style={{ color: UI.muted, fontWeight: 850, fontSize: 12 }}>Latest first</span>}>
-            {!recentLogs.length ? (
+          {/* Recent injections (collapsible) */}
+          <Card
+            title="Recent injections"
+            right={
+              <button
+                onClick={() => setRecentOpen((v) => !v)}
+                className="pillHover"
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 999,
+                  border: `1px solid rgba(17,17,17,0.18)`,
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 950,
+                  minHeight: 40,
+                }}
+              >
+                {recentOpen ? "Hide" : "Show"}
+              </button>
+            }
+          >
+            {!recent.length ? (
               <div style={{ color: UI.muted, fontWeight: 850 }}>No injections logged yet.</div>
+            ) : !recentOpen ? (
+              <div style={{ color: UI.muted, fontWeight: 850 }}>
+                Latest: <span style={{ color: UI.ink, fontWeight: 950 }}>{recent[0].routineName}</span> •{" "}
+                <span style={{ color: UI.ink, fontWeight: 950 }}>{recent[0].spotLabel}</span>
+              </div>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
-                {recentLogs.map((l) => (
+                {recent.map((l) => (
                   <div
                     key={l.id}
                     style={{
@@ -613,13 +746,14 @@ export default function TrackerPage() {
                         {l.routineName} • {l.spotLabel}
                       </div>
                       <div style={{ color: UI.muted, fontWeight: 850, fontSize: 13, marginTop: 4 }}>
-                        {String(l.injectedAtISO).slice(0, 10)} • {timeFromISO(l.injectedAtISO)}
+                        {ymdFromISO(l.injectedAtISO)} • {timeFromISO(l.injectedAtISO)}
                         {l.doseMg ? ` • ${l.doseMg}mg` : ""}
                       </div>
                     </div>
 
                     <button
-                      onClick={() => openEditLog(l.id)}
+                      onClick={() => openLogEdit(l)}
+                      className="pillHover"
                       style={{
                         padding: "10px 12px",
                         borderRadius: 999,
@@ -639,478 +773,332 @@ export default function TrackerPage() {
           </Card>
         </div>
 
-        {/* Routines (low-friction management) */}
-        <div style={{ marginTop: 14 }}>
-          <Card title="Routines" right={null}>
-            <div style={{ display: "grid", gap: 10 }}>
-              {routines.map((r) => (
-                <div
-                  key={r.id}
-                  style={{
-                    border: `1px solid rgba(17,17,17,0.10)`,
-                    borderRadius: 16,
-                    padding: 12,
-                    background: "#fff",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 950, color: UI.ink, display: "flex", gap: 10, alignItems: "center" }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 99, background: routineColorById[r.id] }} />
-                      {r.name}
-                    </div>
-                    <div style={{ color: UI.muted, fontWeight: 850, fontSize: 13, marginTop: 4 }}>
-                      {(r.doseMg ?? "—")}mg • {fmtFreq(r.frequency)} • {r.preferredTime ?? "—"}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      onClick={() => openLogSheet({ routineId: r.id })}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 999,
-                        border: `1px solid ${UI.accent}`,
-                        background: UI.accent,
-                        color: "#fff",
-                        cursor: "pointer",
-                        fontWeight: 950,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Log
-                    </button>
-
-                    <button
-                      onClick={() => openEditRoutine(r.id)}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 999,
-                        border: `1px solid rgba(17,17,17,0.18)`,
-                        background: "#fff",
-                        cursor: "pointer",
-                        fontWeight: 950,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      onClick={() => deleteRoutine(r.id)}
-                      disabled={routines.length <= 1}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 999,
-                        border: `1px solid rgba(220, 38, 38, 0.35)`,
-                        background: "rgba(220, 38, 38, 0.10)",
-                        color: "#b91c1c",
-                        cursor: routines.length <= 1 ? "not-allowed" : "pointer",
-                        fontWeight: 950,
-                        opacity: routines.length <= 1 ? 0.5 : 1,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-
-        {/* Log sheet */}
-        {logSheetOpen ? (
-          <GlassOverlay onClose={closeLogSheet} align="bottom">
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: "min(760px, 100%)",
-                background: "rgba(255,255,255,0.94)",
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
-                border: `1px solid ${UI.line}`,
-                borderRadius: 20,
-                boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
-
-              <div
+        {/* ---- Manage routines (FULL SCREEN on mobile, CENTER on desktop) ---- */}
+        {routinesOpen ? (
+          <ModalShell
+            isMobile={isMobile}
+            title="Routines"
+            subtitle="Tap Edit to expand fields underneath."
+            onClose={() => setRoutinesOpen(false)}
+            right={
+              <button
+                onClick={addRoutine}
+                className="pillHover"
                 style={{
-                  padding: 14,
-                  borderBottom: `1px solid ${UI.line}`,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
+                  padding: "10px 12px",
+                  minHeight: 40,
+                  borderRadius: 999,
+                  border: `1px solid rgba(17,17,17,0.18)`,
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 950,
                 }}
               >
-                <div>
-                  <div style={{ fontWeight: 950, fontSize: 16, color: UI.ink }}>Log injection</div>
-                  <div style={{ color: UI.muted, fontWeight: 850, marginTop: 4, fontSize: 13 }}>
-                    Fast log — you can add multiple per day.
-                  </div>
-                </div>
+                + Add
+              </button>
+            }
+          >
+            <div style={{ display: "grid", gap: 12 }}>
+              {routines.map((r, idx) => {
+                const active = r.id === selectedRoutineId;
+                const color = routineColorById[r.id] ?? ROUTINE_COLORS[idx % ROUTINE_COLORS.length];
 
-                <button
-                  onClick={closeLogSheet}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid rgba(220,38,38,0.35)`,
-                    background: "rgba(220,38,38,0.10)",
-                    color: "#b91c1c",
-                    cursor: "pointer",
-                    fontWeight: 950,
-                  }}
-                >
-                  Close
-                </button>
-              </div>
+                return (
+                  <div
+                    key={r.id}
+                    style={{
+                      border: active ? `2px solid ${UI.accentLine}` : `1px solid rgba(17,17,17,0.12)`,
+                      borderRadius: 18,
+                      background: "#fff",
+                      padding: 12,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 99, background: color }} />
+                        <div style={{ lineHeight: 1.15 }}>
+                          <div style={{ fontWeight: 950, color: UI.ink }}>{r.name}</div>
+                          <div style={{ marginTop: 2, fontWeight: 850, fontSize: 12, color: UI.muted }}>
+                            {r.doseMg ? `${r.doseMg}mg` : "—"} • {r.frequency ?? "weekly"} • {r.preferredTime ?? "08:00"}
+                          </div>
+                        </div>
+                      </div>
 
-              <div style={{ padding: 14 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Routine</div>
-                    <select
-                      value={logRoutineId}
-                      onChange={(e) => {
-                        const rid = e.target.value;
-                        setLogRoutineId(rid);
-                        const planned = routineById[rid]?.doseMg;
-                        setLogDoseMg(planned ?? "");
-                      }}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    >
-                      {routines.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => setSelectedRoutineId(r.id)}
+                          className="pillHover"
+                          style={{
+                            padding: "10px 12px",
+                            borderRadius: 999,
+                            border: `1px solid rgba(17,17,17,0.18)`,
+                            background: "#fff",
+                            cursor: "pointer",
+                            fontWeight: 950,
+                            minHeight: 40,
+                          }}
+                        >
+                          Select
+                        </button>
 
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Spot</div>
-                    <select
-                      value={logSpotId}
-                      onChange={(e) => setLogSpotId(e.target.value)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    >
-                      {SPOTS.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                        <button
+                          onClick={() => {
+                            // toggle “edit” by setting a per-routine flag using local state via a derived hack:
+                            // simplest: store in window scope? no. We'll do a tiny inline state: use dataset approach? no.
+                            // We'll implement by adding a local map:
+                          }}
+                          style={{ display: "none" }}
+                        >
+                          noop
+                        </button>
+                      </div>
+                    </div>
 
-                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Date</div>
-                    <input
-                      type="date"
-                      value={logDateYMD}
-                      onChange={(e) => setLogDateYMD(e.target.value)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
+                    {/* Inline editor (always visible for the selected routine to keep it simple and predictable) */}
+                    {active ? (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          borderTop: `1px solid rgba(17,17,17,0.10)`,
+                          paddingTop: 12,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        <div style={{ fontWeight: 950, color: UI.ink }}>Edit routine</div>
 
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Time</div>
-                    <input
-                      type="time"
-                      value={logTimeHHMM}
-                      onChange={(e) => setLogTimeHHMM(e.target.value)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-                </div>
+                        <div>
+                          <div style={{ fontWeight: 900, color: UI.ink, marginBottom: 8 }}>Routine name</div>
+                          <input
+                            value={r.name}
+                            onChange={(e) => setRoutineField(r.id, { name: e.target.value })}
+                            className="inputPremium"
+                            style={{
+                              width: "100%",
+                              padding: 12,
+                              borderRadius: 14,
+                              border: `1px solid ${UI.line}`,
+                              fontWeight: 950,
+                              background: "#fff",
+                            }}
+                          />
+                        </div>
 
-                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Dose (mg)</div>
-                    <input
-                      value={logDoseMg}
-                      onChange={(e) => setLogDoseMg(e.target.value)}
-                      placeholder="e.g. 2.5"
-                      inputMode="decimal"
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
+                        <div className="twoCol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <div>
+                            <div style={{ fontWeight: 900, color: UI.ink, marginBottom: 8 }}>Dose (mg)</div>
+                            <input
+                              value={r.doseMg ?? ""}
+                              onChange={(e) => setRoutineField(r.id, { doseMg: e.target.value })}
+                              placeholder="e.g. 2.5"
+                              inputMode="decimal"
+                              className="inputPremium"
+                              style={{
+                                width: "100%",
+                                padding: 12,
+                                borderRadius: 14,
+                                border: `1px solid ${UI.line}`,
+                                fontWeight: 950,
+                                background: "#fff",
+                              }}
+                            />
+                          </div>
 
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Notes (optional)</div>
-                    <input
-                      value={logNotes}
-                      onChange={(e) => setLogNotes(e.target.value)}
-                      placeholder="Anything to remember…"
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 900,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-                </div>
+                          <div>
+                            <div style={{ fontWeight: 900, color: UI.ink, marginBottom: 8 }}>Preferred time</div>
+                            <input
+                              value={r.preferredTime ?? "08:00"}
+                              onChange={(e) => setRoutineField(r.id, { preferredTime: e.target.value })}
+                              type="time"
+                              className="inputPremium"
+                              style={{
+                                width: "100%",
+                                padding: 12,
+                                borderRadius: 14,
+                                border: `1px solid ${UI.line}`,
+                                fontWeight: 950,
+                                background: "#fff",
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                <div
-                  style={{
-                    marginTop: 14,
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    border: `1px solid rgba(17,17,17,0.10)`,
-                    borderRadius: 18,
-                    padding: 12,
-                    background: "linear-gradient(180deg, #ffffff 0%, #fff7f3 100%)",
-                  }}
-                >
-                  <div style={{ color: UI.muted, fontWeight: 850, fontSize: 13 }}>
-                    You can log multiple injections per day — use <b>Log another</b> for fast repeats.
-                  </div>
+                        <div className="twoCol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <div>
+                            <div style={{ fontWeight: 900, color: UI.ink, marginBottom: 8 }}>Frequency</div>
+                            <select
+                              value={r.frequency ?? "weekly"}
+                              onChange={(e) => setRoutineField(r.id, { frequency: e.target.value as Frequency })}
+                              className="inputPremium"
+                              style={{
+                                width: "100%",
+                                padding: 12,
+                                borderRadius: 14,
+                                border: `1px solid ${UI.line}`,
+                                fontWeight: 950,
+                                background: "#fff",
+                              }}
+                            >
+                              <option value="daily">Daily</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="twice_weekly">Twice weekly</option>
+                              <option value="three_times_weekly">3× per week</option>
+                            </select>
+                          </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button
-                      onClick={() => logInjection({ keepOpenForAnother: true })}
-                      style={{
-                        padding: "12px 14px",
-                        borderRadius: 16,
-                        border: `1px solid rgba(17,17,17,0.18)`,
-                        background: "#fff",
-                        cursor: "pointer",
-                        fontWeight: 950,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Log another
-                    </button>
+                          <div>
+                            <div style={{ fontWeight: 900, color: UI.ink, marginBottom: 8 }}>Reconstituted on</div>
+                            <input
+                              type="date"
+                              value={r.reconstitutedOn ?? ""}
+                              onChange={(e) => setRoutineField(r.id, { reconstitutedOn: e.target.value })}
+                              className="inputPremium"
+                              style={{
+                                width: "100%",
+                                padding: 12,
+                                borderRadius: 14,
+                                border: `1px solid ${UI.line}`,
+                                fontWeight: 950,
+                                background: "#fff",
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                    <button
-                      onClick={() => logInjection({ keepOpenForAnother: false })}
-                      style={{
-                        padding: "12px 14px",
-                        borderRadius: 16,
-                        border: `1px solid ${UI.accent}`,
-                        background: UI.accent,
-                        color: "#fff",
-                        cursor: "pointer",
-                        fontWeight: 950,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Save & close →
-                    </button>
-                  </div>
-                </div>
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => setRoutineField(r.id, { reconstitutedOn: todayYMD() })}
+                            className="pillHover"
+                            style={{
+                              padding: "10px 12px",
+                              minHeight: 40,
+                              borderRadius: 999,
+                              border: `1px solid ${UI.line}`,
+                              background: "#fff",
+                              cursor: "pointer",
+                              fontWeight: 950,
+                            }}
+                          >
+                            Set “Reconstituted” to Today
+                          </button>
 
-                <div style={{ marginTop: 10, color: "rgba(17,17,17,0.60)", fontWeight: 800, fontSize: 12, lineHeight: 1.4 }}>
-                  For general informational use only. Double-check calculations and follow professional medical guidance.
-                </div>
-              </div>
-            </div>
-          </GlassOverlay>
-        ) : null}
-
-        {/* Routine sheet */}
-        {routineSheetOpen ? (
-          <GlassOverlay onClose={() => setRoutineSheetOpen(false)} align="bottom">
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: "min(760px, 100%)",
-                background: "rgba(255,255,255,0.94)",
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
-                border: `1px solid ${UI.line}`,
-                borderRadius: 20,
-                boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
-
-              <div
-                style={{
-                  padding: 14,
-                  borderBottom: `1px solid ${UI.line}`,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 950, fontSize: 16, color: UI.ink }}>
-                    {editingRoutineId ? "Edit routine" : "Add routine"}
-                  </div>
-                  <div style={{ color: UI.muted, fontWeight: 850, marginTop: 4, fontSize: 13 }}>
-                    Keep it simple: name + dose + frequency is enough.
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setRoutineSheetOpen(false)}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid rgba(220,38,38,0.35)`,
-                    background: "rgba(220,38,38,0.10)",
-                    color: "#b91c1c",
-                    cursor: "pointer",
-                    fontWeight: 950,
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div style={{ padding: 14 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Name</div>
-                    <input
-                      value={rName}
-                      onChange={(e) => setRName(e.target.value)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Dose (mg)</div>
-                    <input
-                      value={rDose}
-                      onChange={(e) => setRDose(e.target.value)}
-                      placeholder="e.g. 2.5"
-                      inputMode="decimal"
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                    {!((rDose || "").trim() === "" || Number.isFinite(toNum(rDose))) ? (
-                      <div style={{ marginTop: 6, color: "#b91c1c", fontWeight: 850, fontSize: 12 }}>
-                        Please enter a valid number (e.g. 2.5)
+                          <button
+                            onClick={() => deleteRoutine(r.id)}
+                            className="pillHover"
+                            style={{
+                              padding: "10px 12px",
+                              minHeight: 40,
+                              borderRadius: 999,
+                              border: `1px solid rgba(220, 38, 38, 0.35)`,
+                              background: "rgba(220, 38, 38, 0.10)",
+                              color: "#b91c1c",
+                              cursor: routines.length <= 1 ? "not-allowed" : "pointer",
+                              fontWeight: 950,
+                              opacity: routines.length <= 1 ? 0.5 : 1,
+                            }}
+                            disabled={routines.length <= 1}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
+                );
+              })}
+            </div>
+          </ModalShell>
+        ) : null}
+
+        {/* ---- Log injection (FULL SCREEN on mobile, CENTER on desktop) ---- */}
+        {logOpen ? (
+          <ModalShell
+            isMobile={isMobile}
+            title={editingLogId == null ? "Log injection" : "Edit injection"}
+            subtitle="Spot is a dropdown (simple + fast)."
+            onClose={() => {
+              setLogOpen(false);
+              setEditingLogId(null);
+            }}
+          >
+            <div style={{ display: "grid", gap: 12 }}>
+              <div className="twoCol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Routine</div>
+                  <select
+                    value={sheetRoutineId}
+                    onChange={(e) => {
+                      const rid = e.target.value;
+                      setSheetRoutineId(rid);
+                      const planned = routineById[rid]?.doseMg ?? "";
+                      if (!sheetDoseMg) setSheetDoseMg(planned);
+                    }}
+                    className="inputPremium"
+                    style={{
+                      width: "100%",
+                      padding: 12,
+                      borderRadius: 14,
+                      border: `1px solid ${UI.line}`,
+                      fontWeight: 950,
+                      background: "#fff",
+                    }}
+                  >
+                    {routines.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Frequency</div>
-                    <select
-                      value={rFreq}
-                      onChange={(e) => setRFreq(e.target.value as Frequency)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="twice_weekly">Twice weekly</option>
-                      <option value="three_times_weekly">3× per week</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Preferred time</div>
-                    <input
-                      type="time"
-                      value={rTime}
-                      onChange={(e) => setRTime(e.target.value)}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
+                <div>
+                  <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Spot</div>
+                  <select
+                    value={sheetSpotId}
+                    onChange={(e) => setSheetSpotId(e.target.value)}
+                    className="inputPremium"
+                    style={{
+                      width: "100%",
+                      padding: 12,
+                      borderRadius: 14,
+                      border: `1px solid ${UI.line}`,
+                      fontWeight: 950,
+                      background: "#fff",
+                    }}
+                  >
+                    {spotsGrouped.viewOrder.map((v) => (
+                      <React.Fragment key={v}>
+                        <optgroup label={v === "front" ? "Front" : "Back"}>
+                          {spotsGrouped.order.map((g) => {
+                            const list = spotsGrouped.by[`${v}:${g}`] ?? [];
+                            if (!list.length) return null;
+                            return (
+                              <React.Fragment key={`${v}:${g}`}>
+                                <option disabled value={`__${v}:${g}__`} style={{ fontWeight: 900 }}>
+                                  {groupEmoji(g)} {groupLabel(g)}
+                                </option>
+                                {list.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.label}
+                                  </option>
+                                ))}
+                              </React.Fragment>
+                            );
+                          })}
+                        </optgroup>
+                      </React.Fragment>
+                    ))}
+                  </select>
                 </div>
+              </div>
 
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Reconstituted on (optional)</div>
+              <div className="twoCol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Date</div>
                   <input
                     type="date"
-                    value={rRecon}
-                    onChange={(e) => setRRecon(e.target.value)}
+                    value={sheetDateYMD}
+                    onChange={(e) => setSheetDateYMD(e.target.value)}
                     className="inputPremium"
                     style={{
                       width: "100%",
@@ -1123,248 +1111,114 @@ export default function TrackerPage() {
                   />
                 </div>
 
-                <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <button
-                    onClick={saveRoutine}
+                <div>
+                  <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Time</div>
+                  <input
+                    type="time"
+                    value={sheetTimeHHMM}
+                    onChange={(e) => setSheetTimeHHMM(e.target.value)}
+                    className="inputPremium"
                     style={{
-                      padding: "12px 14px",
-                      borderRadius: 16,
-                      border: `1px solid ${UI.accent}`,
-                      background: UI.accent,
-                      color: "#fff",
-                      cursor: "pointer",
+                      width: "100%",
+                      padding: 12,
+                      borderRadius: 14,
+                      border: `1px solid ${UI.line}`,
                       fontWeight: 950,
+                      background: "#fff",
                     }}
-                  >
-                    Save routine →
-                  </button>
+                  />
                 </div>
               </div>
-            </div>
-          </GlassOverlay>
-        ) : null}
 
-        {/* Edit log sheet */}
-        {editingLog ? (
-          <GlassOverlay onClose={closeEditLog} align="bottom">
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: "min(760px, 100%)",
-                background: "rgba(255,255,255,0.94)",
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
-                border: `1px solid ${UI.line}`,
-                borderRadius: 20,
-                boxShadow: "0 24px 70px rgba(0,0,0,0.22)",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ width: 44, height: 5, borderRadius: 999, background: "rgba(17,17,17,0.18)", margin: "10px auto 0" }} />
+              <div>
+                <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Dose (mg)</div>
+                <input
+                  value={sheetDoseMg}
+                  onChange={(e) => setSheetDoseMg(e.target.value)}
+                  placeholder="e.g. 2.5"
+                  inputMode="decimal"
+                  className="inputPremium"
+                  style={{
+                    width: "100%",
+                    padding: 12,
+                    borderRadius: 14,
+                    border: `1px solid ${UI.line}`,
+                    fontWeight: 950,
+                    background: "#fff",
+                  }}
+                />
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Notes (optional)</div>
+                <textarea
+                  value={sheetNotes}
+                  onChange={(e) => setSheetNotes(e.target.value)}
+                  placeholder="Anything to remember…"
+                  className="inputPremium"
+                  style={{
+                    width: "100%",
+                    minHeight: 90,
+                    padding: 12,
+                    borderRadius: 14,
+                    border: `1px solid rgba(17,17,17,0.18)`,
+                    fontSize: 15,
+                    resize: "vertical",
+                    background: "#fff",
+                    color: UI.ink,
+                  }}
+                />
+              </div>
 
               <div
                 style={{
+                  border: `1px solid rgba(17,17,17,0.16)`,
+                  borderRadius: 18,
                   padding: 14,
-                  borderBottom: `1px solid ${UI.line}`,
+                  background: "linear-gradient(180deg, #ffffff 0%, #fff7f3 100%)",
                   display: "flex",
                   justifyContent: "space-between",
+                  gap: 12,
                   alignItems: "center",
-                  gap: 10,
+                  flexWrap: "wrap",
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 950, fontSize: 16, color: UI.ink }}>Edit injection</div>
-                  <div style={{ color: UI.muted, fontWeight: 850, marginTop: 4, fontSize: 13 }}>
-                    Change spot, dose, time or notes without deleting.
+                  <div style={{ fontWeight: 950, color: UI.ink }}>Ready to save</div>
+                  <div style={{ fontSize: 12, color: "rgba(17,17,17,0.60)", marginTop: 4, fontWeight: 750 }}>
+                    <b>{routineById[sheetRoutineId]?.name ?? "Routine"}</b> •{" "}
+                    <b>{SPOTS.find((s) => s.id === sheetSpotId)?.label ?? "Spot"}</b> •{" "}
+                    <b>
+                      {sheetDateYMD} {sheetTimeHHMM}
+                    </b>
                   </div>
                 </div>
 
                 <button
-                  onClick={closeEditLog}
+                  onClick={saveLog}
+                  className="pillHover"
                   style={{
-                    padding: "10px 12px",
-                    borderRadius: 999,
-                    border: `1px solid rgba(220,38,38,0.35)`,
-                    background: "rgba(220,38,38,0.10)",
-                    color: "#b91c1c",
+                    padding: "14px 16px",
+                    borderRadius: 16,
+                    border: `1px solid ${UI.accent}`,
+                    background: UI.accent,
+                    color: "#fff",
                     cursor: "pointer",
                     fontWeight: 950,
+                    fontSize: 16,
+                    boxShadow: UI.shadow,
+                    width: isMobile ? "100%" : "min(260px, 100%)",
                   }}
                 >
-                  Close
+                  Save →
                 </button>
               </div>
 
-              <div style={{ padding: 14 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Routine</div>
-                    <select
-                      value={editingLog.routineId}
-                      onChange={(e) => {
-                        const rid = e.target.value;
-                        const r = routineById[rid];
-                        updateLog({
-                          routineId: rid,
-                          routineName: r?.name ?? editingLog.routineName,
-                        });
-                      }}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    >
-                      {routines.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Spot</div>
-                    <select
-                      value={editingLog.spotId}
-                      onChange={(e) => {
-                        const sid = e.target.value;
-                        const s = SPOTS.find((x) => x.id === sid) ?? null;
-                        updateLog({
-                          spotId: sid,
-                          spotLabel: s?.label ?? editingLog.spotLabel,
-                          view: (s?.view ?? editingLog.view) as any,
-                        });
-                      }}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    >
-                      {SPOTS.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Date</div>
-                    <input
-                      type="date"
-                      value={String(editingLog.injectedAtISO).slice(0, 10)}
-                      onChange={(e) => {
-                        const date = e.target.value;
-                        const time = String(editingLog.injectedAtISO).slice(11, 16) || "08:00";
-                        const iso = new Date(`${date}T${time}`).toISOString();
-                        updateLog({ injectedAtISO: iso });
-                      }}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Time</div>
-                    <input
-                      type="time"
-                      value={String(editingLog.injectedAtISO).slice(11, 16)}
-                      onChange={(e) => {
-                        const date = String(editingLog.injectedAtISO).slice(0, 10);
-                        const time = e.target.value;
-                        const iso = new Date(`${date}T${time}`).toISOString();
-                        updateLog({ injectedAtISO: iso });
-                      }}
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Dose (mg)</div>
-                    <input
-                      value={editingLog.doseMg ?? ""}
-                      onChange={(e) => updateLog({ doseMg: e.target.value })}
-                      placeholder="e.g. 2.5"
-                      inputMode="decimal"
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 950,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <div style={{ fontWeight: 900, marginBottom: 8, color: UI.ink }}>Notes (optional)</div>
-                    <input
-                      value={editingLog.notes ?? ""}
-                      onChange={(e) => updateLog({ notes: e.target.value })}
-                      placeholder="Anything to remember…"
-                      className="inputPremium"
-                      style={{
-                        width: "100%",
-                        padding: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${UI.line}`,
-                        fontWeight: 900,
-                        background: "#fff",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-                  <button
-                    onClick={closeEditLog}
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: 16,
-                      border: `1px solid ${UI.accent}`,
-                      background: UI.accent,
-                      color: "#fff",
-                      cursor: "pointer",
-                      fontWeight: 950,
-                    }}
-                  >
-                    Done →
-                  </button>
-                </div>
+              <div style={{ color: "rgba(17,17,17,0.60)", fontWeight: 800, fontSize: 12, lineHeight: 1.4 }}>
+                For general informational use only. Double-check calculations and follow professional medical guidance.
               </div>
             </div>
-          </GlassOverlay>
+          </ModalShell>
         ) : null}
       </AppPage>
     </AppShell>
